@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linkflix</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <!-- Ambient background -->
+  <div class="bg" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    <div class="grain"></div>
+  </div>
+
+  <!-- Top bar -->
+  <header class="topbar glass">
+    <div class="brand" id="brand" title="Home (H)">
+      <span class="brand-mark">▶</span> Link<span class="brand-accent">flix</span>
+    </div>
+    <div class="topbar-search">
+      <span class="search-icon">⌕</span>
+      <input id="search-input" type="text" placeholder="Search your library…  ( / )" autocomplete="off">
+    </div>
+    <nav class="topbar-actions">
+      <button class="pill-btn" id="btn-add" title="Add title (A)">＋ Add <kbd>A</kbd></button>
+      <button class="pill-btn" id="btn-chat" title="AI Concierge (C)">✦ Concierge <kbd>C</kbd></button>
+      <button class="pill-btn scope-btn" id="btn-scope" title="Suggestion scope">⌂ Library</button>
+      <button class="pill-btn" id="btn-settings" title="Settings (S)">⚙ <kbd>S</kbd></button>
+    </nav>
+  </header>
+
+  <!-- Main view -->
+  <main id="view" tabindex="-1"></main>
+
+  <!-- Chat panel -->
+  <aside id="chat-panel" class="chat-panel glass" hidden>
+    <div class="chat-head">
+      <div>
+        <div class="chat-title">✦ AI Concierge</div>
+        <div class="chat-sub" id="chat-sub">Runs locally on your GPU · library-only</div>
+      </div>
+      <div class="chat-scope" aria-label="Suggestion scope">
+        <button type="button" class="mode-btn active" id="chat-scope-library" title="Only suggest from your library">⌂</button>
+        <button type="button" class="mode-btn" id="chat-scope-outside" title="Allow outside suggestions">◎</button>
+      </div>
+      <button class="pill-btn small icon-only" id="chat-refresh" title="Refresh Concierge context">⟳</button>
+      <button class="pill-btn small" id="chat-close" title="Close (Esc)">✕</button>
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <form class="chat-inputrow" id="chat-form">
+      <input id="chat-input" type="text" placeholder="What should I watch tonight?" autocomplete="off">
+      <button class="pill-btn accent" type="submit">↑</button>
+    </form>
+  </aside>
+
+  <!-- Modals -->
+  <div id="modal-root"></div>
+
+  <!-- Key hints -->
+  <footer class="keybar glass">
+    <span><kbd>↑↓←→</kbd> Navigate</span>
+    <span><kbd>⏎</kbd> Select</span>
+    <span><kbd>⎋</kbd> Back</span>
+    <span><kbd>/</kbd> Search</span>
+    <span><kbd>A</kbd> Add</span>
+    <span><kbd>C</kbd> Concierge</span>
+    <span><kbd>S</kbd> Settings</span>
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

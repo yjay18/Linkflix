@@ -1,0 +1,15 @@
+# personal / private — never commit
+context.md
+library/library.json
+library/watch.json
+library.json
+watch.json
+.env
+.env.*
+.claude/
+.codex/
+.agents/
+
+# OS noise
+.DS_Store
+Thumbs.db
