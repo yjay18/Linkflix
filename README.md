@@ -1,14 +1,15 @@
 # Linkflix 🎬
 
-Your personal Netflix, powered by your own Google Drive links. Runs entirely in the
-browser — no server logic, no accounts, no databases, no paid APIs.
+Your personal Netflix, powered by your own Google Drive links. Runs locally on your
+laptop — no accounts, no databases, no paid APIs. The one-click launcher includes a
+tiny local save endpoint so library changes are backed up to disk automatically.
 
 ## Run it
 
 **One-click (recommended):**
 
 - **Mac** — double-click **`Linkflix.command`**. It starts the server and opens
-  Linkflix at `http://127.0.0.1:4173/index.html` in your default browser.
+  Linkflix at `http://localhost:4173/index.html` in your default browser.
   First time only, macOS may block it: right-click
   the file → *Open* → *Open* (or run `chmod +x Linkflix.command` in Terminal once).
   For a Dock/Desktop shortcut, make an alias: right-click → *Make Alias*, drag it
@@ -20,13 +21,13 @@ browser — no server logic, no accounts, no databases, no paid APIs.
 
 Close the little server window to stop the app.
 
-**Or the one-liner** (any laptop with Python):
+**Or the one-liner** (any laptop with Python, with disk autosave):
 
 ```sh
-python3 -m http.server 4173
+python3 server.py
 ```
 
-(from inside the linkflix folder, then open http://127.0.0.1:4173/index.html)
+(from inside the linkflix folder, then open http://localhost:4173/index.html)
 
 ## Features
 
@@ -48,6 +49,10 @@ python3 -m http.server 4173
   (toggle in Settings).
 - **Cover uploads** — upload an image file; it's downscaled and saved inside your
   library data, so it travels with exports.
+- **Automatic disk backup** — when launched with `Linkflix.command`, `Linkflix.bat`,
+  or `python3 server.py`, every library add/edit/import/delete is also saved to
+  `library/library.json`. That file stays ignored by Git so private libraries are not
+  uploaded by accident.
 - **AI Concierge** — chat for recommendations. Runs 100% locally on your GPU via WebGPU
   (WebLLM). It defaults to **⌂ Library** mode, where even "what should I watch?" stays
   inside titles saved in Linkflix. Use the top **◎ Outside** icon to allow outside
@@ -63,10 +68,11 @@ python3 -m http.server 4173
 - **Hover previews** — hover any card for a Netflix-style expanded preview: full
   cover, Play (resumes where you left off, or starts episode 1) and a quick
   episode picker for shows.
-- **Shared library folder** — Settings → *Export library.json*, drop it in the app's
-  `library/` folder. Anyone with the folder (e.g. synced via Google Drive) runs the
-  same one-liner and presses *Reload from folder* to get your latest library, covers
-  included. It also loads automatically on first run.
+- **Shared library folder** — Settings → *Export library.json* still works manually,
+  but the launcher now keeps `library/library.json` updated for you. Anyone with the
+  folder (e.g. synced via Google Drive) runs the same launcher and presses *Reload
+  from folder* to get your latest library, covers included. It also loads
+  automatically on first run.
 - **Private watch history** — Continue Watching is saved locally and exported as a
   separate optional `watch.json`, so sharing your library never shares what you've
   watched unless you drop that file in the folder too.
@@ -81,8 +87,9 @@ Fully mouse-driven. Keyboard shortcuts also work:
 
 ## Notes
 
-- Your library lives in the browser's localStorage — export `library.json` now and
-  then as a backup.
+- Your library still lives in the browser's localStorage for instant loading, and the
+  local launcher mirrors it to `library/library.json`. If you serve the app with plain
+  `python3 -m http.server`, the UI works but disk autosave cannot run.
 - Privacy: your Brave API key (if you set one) and the Brave yes/no setting are stored
   only in your browser's localStorage. They are never written to `library.json`,
   `watch.json`, exports, or any file in this folder — safe to share the library freely.

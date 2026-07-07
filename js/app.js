@@ -36,7 +36,28 @@ let pendingPlaylist = store.get('pendingPlaylist', null);
 let view = { name: 'home' };
 let searchQuery = '';
 
-const saveLibrary = () => store.set('library', library);
+let diskSaveTimer = null;
+let diskSaveWarned = false;
+async function saveLibraryToDisk() {
+  try {
+    const r = await fetch('/api/save-library', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ library })
+    });
+    if (!r.ok) throw new Error('autosave failed');
+  } catch {
+    if (!diskSaveWarned && location.protocol !== 'file:') {
+      diskSaveWarned = true;
+      toast('Disk autosave is off — launch with Linkflix.command/server.py to write library.json');
+    }
+  }
+}
+function saveLibrary() {
+  store.set('library', library);
+  clearTimeout(diskSaveTimer);
+  diskSaveTimer = setTimeout(saveLibraryToDisk, 300);
+}
 const saveSettings = () => store.set('settings', settings);
 const saveChat = () => { chatLog = chatLog.slice(-40); store.set('chat', chatLog); };
 const savePendingPlaylist = () => store.set('pendingPlaylist', pendingPlaylist);
@@ -1890,3 +1911,4 @@ if (cleaned.length !== library.length) { library = cleaned; saveLibrary(); }
 syncSuggestionScopeUi();
 render();
 if (!library.length) loadFromFolder(true);   // pick up a shared library/ folder if present
+else saveLibrary();                          // recreate/update library/library.json on launch
