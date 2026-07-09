@@ -8,12 +8,22 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import socket
 import tempfile
+import threading
 
 
 ROOT = Path(__file__).resolve().parent
 LIBRARY_DIR = ROOT / "library"
 PORT = int(os.environ.get("LINKFLIX_PORT", "4173"))
+
+
+class LinkflixServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+
+
+class LinkflixIPv6Server(LinkflixServer):
+    address_family = socket.AF_INET6
 
 
 class LinkflixHandler(SimpleHTTPRequestHandler):
@@ -71,4 +81,20 @@ if __name__ == "__main__":
     os.chdir(ROOT)
     print(f"Linkflix running at http://localhost:{PORT}/index.html")
     print("Autosaves library changes to library/library.json")
-    ThreadingHTTPServer(("localhost", PORT), LinkflixHandler).serve_forever()
+    servers = []
+    for host, server_class in (("127.0.0.1", LinkflixServer), ("::1", LinkflixIPv6Server)):
+        try:
+            servers.append(server_class((host, PORT), LinkflixHandler))
+        except OSError as exc:
+            print(f"Could not listen on {host}:{PORT}: {exc}")
+
+    if not servers:
+        raise SystemExit(
+            f"Could not start Linkflix on port {PORT}. "
+            "Close the old server window or set LINKFLIX_PORT to another port."
+        )
+
+    for server in servers[1:]:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    servers[0].serve_forever()

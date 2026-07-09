@@ -55,6 +55,7 @@ async function saveLibraryToDisk() {
 }
 function saveLibrary() {
   store.set('library', library);
+  invalidateConciergeContext();
   clearTimeout(diskSaveTimer);
   diskSaveTimer = setTimeout(saveLibraryToDisk, 300);
 }
@@ -248,6 +249,24 @@ const CATEGORY_ORDER = [
   'Music & Musicals', 'Sports', 'Limited Series', 'Long-Run Shows'
 ];
 
+const RECOMMENDATION_TAG_RULES = [
+  ['funny', /\b(comedy|comic|funny|sitcom|joke|jokes|laugh|hilarious|humor|humour|satire|parody|witty|absurd|goofy|silly|sketch)\b/i],
+  ['light', /\b(light|comfort|cozy|cosy|feel.?good|easy|warm|charming|wholesome|breezy)\b/i],
+  ['dark', /\b(dark|gritty|bleak|violent|twisted|brooding|antihero|revenge|tragic)\b/i],
+  ['intense', /\b(intense|tense|thriller|suspense|stressful|edge|high.?stakes|survival|danger)\b/i],
+  ['mystery', /\b(mystery|detective|investigation|clue|case|murder|secret|conspiracy|noir)\b/i],
+  ['crime', /\b(crime|criminal|heist|gang|mafia|cartel|police|cop|detective|prison)\b/i],
+  ['sci-fi', /\b(sci.?fi|science fiction|space|alien|future|robot|android|dystopia|time travel|multiverse)\b/i],
+  ['fantasy', /\b(fantasy|magic|dragon|kingdom|myth|supernatural|witch|wizard|prophecy)\b/i],
+  ['romantic', /\b(romance|romantic|love|relationship|dating|crush|wedding|heartbreak|rom-com)\b/i],
+  ['animated', /\b(animation|animated|anime|cartoon)\b/i],
+  ['family', /\b(family|kids|children|teen|school|all ages)\b/i],
+  ['action', /\b(action|adventure|fight|battle|war|mission|spy|superhero|chase|martial)\b/i],
+  ['scary', /\b(horror|scary|haunted|ghost|monster|slasher|zombie|vampire|terror)\b/i],
+  ['short', /\b(short|quick|limited|miniseries|mini-series|special)\b/i],
+  ['binge', /\b(binge|long|long-running|many episodes|season|seasons)\b/i]
+];
+
 function labelCase(raw) {
   const clean = String(raw || '').replace(/\s+/g, ' ').trim();
   const key = clean.toLowerCase().replace(/[&/]+/g, ' ').replace(/\s+/g, ' ');
@@ -277,6 +296,34 @@ function itemText(item) {
     .flatMap(ep => [ep.title, ep.subtitle, ep.airdate])).filter(Boolean).slice(0, 30).join(' ');
   return [item.title, item.genre, item.subtitle, formatShowDates(item), item.type, episodes]
     .filter(Boolean).join(' ');
+}
+
+function tagsFromText(text) {
+  const tags = new Set();
+  for (const [tag, re] of RECOMMENDATION_TAG_RULES)
+    if (re.test(text)) tags.add(tag);
+  return [...tags];
+}
+
+function itemRecommendationProfile(item) {
+  const topText = [item.title, item.genre, item.subtitle, formatShowDates(item), item.type]
+    .filter(Boolean).join(' ');
+  const categorySet = new Set(explicitGenreLabels(item));
+  for (const [label, re] of CATEGORY_RULES)
+    if (re.test(topText)) categorySet.add(label);
+  if (item.type === 'show') {
+    const eps = episodeCount(item);
+    if (eps && eps <= 10) categorySet.add('Limited Series');
+    if (eps >= 30) categorySet.add('Long-Run Shows');
+  }
+  const categories = [...categorySet];
+  const categoryText = categories.join(' ');
+  const tags = [...new Set([
+    ...tagsFromText(topText),
+    ...tagsFromText(categoryText),
+    ...categories.map(c => c.toLowerCase().replace(/&/g, '').replace(/\s+/g, '-'))
+  ])];
+  return { text: topText, categories, tags };
 }
 
 function itemCategories(item) {
@@ -1214,7 +1261,7 @@ function toggleChat(open) {
   const panel = $('#chat-panel');
   panel.hidden = open === undefined ? !panel.hidden : !open;
   if (!panel.hidden) {
-    conciergeSnapshot();
+    buildConciergeContext();
     renderChat();
     $('#chat-input').focus();
   }
@@ -1285,7 +1332,7 @@ function chatCardsHtml(cards, opts = {}) {
   }).join('')}</div>`;
 }
 
-const STOP_WORDS = new Set('a an and are as at be by for from give i in is it make me my of on or please something the to watch with you your'.split(' '));
+const STOP_WORDS = new Set('a an and are as at be by for from give i in is it make me my of on or please something the to watch with you your show shows series episode episodes movie movies film films title titles tonight'.split(' '));
 
 function isPlaylistIntent(text) {
   return /\b(playlist|queue|lineup|curate|watchlist|movie night|binge)\b/i.test(text);
@@ -1310,11 +1357,19 @@ function preferenceTokens(text) {
     .filter(w => w.length > 2 && !STOP_WORDS.has(w));
 }
 
-function playlistReason(item, tokens) {
-  const cats = itemCategories(item).filter(c => c !== 'Movies' && c !== 'TV Shows');
-  const matched = tokens.find(t => itemText(item).toLowerCase().includes(t));
-  if (matched) return `Matches “${matched}” in your library metadata.`;
-  if (cats.length) return `Fits ${cats.slice(0, 2).join(' + ')}.`;
+function queryPreferenceTags(query) {
+  return tagsFromText(query);
+}
+
+function playlistReason(item, tokens, queryTags = []) {
+  const profile = itemRecommendationProfile(item);
+  const tagMatches = queryTags.filter(t => profile.tags.includes(t));
+  if (tagMatches.length && profile.categories.length)
+    return `Tagged ${tagMatches.slice(0, 2).join(' + ')} · ${profile.categories.slice(0, 2).join(' + ')}.`;
+  if (tagMatches.length) return `Tagged ${tagMatches.slice(0, 2).join(' + ')}.`;
+  const matched = tokens.find(t => profile.text.toLowerCase().includes(t));
+  if (matched) return `Matches “${matched}” in this title's details.`;
+  if (profile.categories.length) return `Fits ${profile.categories.slice(0, 2).join(' + ')}.`;
   return item.type === 'show' ? 'A series from your saved library.' : 'A film from your saved library.';
 }
 
@@ -1338,23 +1393,28 @@ function curatePlaylist(query, limit = 6) {
   const playable = library.filter(isPlayable);
   const pool = playable.length ? playable : library;
   const tokens = preferenceTokens(query);
+  const queryTags = queryPreferenceTags(query);
   const wantsShow = /\b(show|shows|series|episode|binge)\b/i.test(query);
   const wantsMovie = /\b(movie|movies|film|films)\b/i.test(query);
   const scored = pool.map((item, idx) => {
-    const text = itemText(item).toLowerCase();
-    const cats = itemCategories(item).join(' ').toLowerCase();
+    const profile = itemRecommendationProfile(item);
+    const text = profile.text.toLowerCase();
+    const cats = profile.categories.join(' ').toLowerCase();
     let score = 0;
+    const matchedTags = queryTags.filter(t => profile.tags.includes(t));
+    score += matchedTags.length * 7;
     for (const t of tokens) {
       if (item.title.toLowerCase().includes(t)) score += 5;
       if (String(item.genre || '').toLowerCase().includes(t)) score += 4;
       if (cats.includes(t)) score += 3;
       if (text.includes(t)) score += 2;
     }
+    if (queryTags.length && !matchedTags.length) score -= 2;
     if (wantsShow && item.type === 'show') score += 3;
     if (wantsMovie && item.type === 'movie') score += 3;
     if (watchLog.some(w => w.itemId === item.id)) score += 1;
     score += Math.max(0, 2 - idx / 100);       // stable tie-breaker: newer additions first
-    return { item, score, reason: playlistReason(item, tokens) };
+    return { item, score, reason: playlistReason(item, tokens, queryTags) };
   }).sort((a, b) => b.score - a.score);
   const picked = scored.slice(0, Math.min(limit, scored.length));
   const theme = tokens.find(t => !['playlist', 'queue', 'lineup', 'curate', 'watchlist'].includes(t));
@@ -1393,10 +1453,13 @@ function librarySummary() {
   return library.map((i, n) => {
     const kind = i.type === 'movie'
       ? 'Movie' : `Series, ${(i.seasons || []).length} season(s)`;
-    const cats = itemCategories(i).filter(c => c !== 'Movies' && c !== 'TV Shows').slice(0, 5).join(', ');
+    const profile = itemRecommendationProfile(i);
+    const cats = profile.categories.slice(0, 5).join(', ');
+    const tags = profile.tags.slice(0, 8).join(', ');
     const meta = [
       i.genre && `genre: ${i.genre}`,
       cats && `categories: ${cats}`,
+      tags && `tags: ${tags}`,
       formatShowDates(i) && `dates: ${formatShowDates(i)}`,
       i.subtitle && `about: ${i.subtitle}`,
       isPlayable(i) ? 'playable: yes' : 'playable: missing Drive link'
@@ -1406,7 +1469,11 @@ function librarySummary() {
   }).join('\n');
 }
 
-let conciergeContext = null;
+var conciergeContext = null;
+
+function invalidateConciergeContext() {
+  conciergeContext = null;
+}
 
 function buildConciergeContext() {
   conciergeContext = {
