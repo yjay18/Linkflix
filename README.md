@@ -1,4 +1,4 @@
-# Linkflix 🎬
+# Linkflix 
 
 Your personal Netflix, powered by your own Google Drive links. Runs locally on your
 laptop — no accounts, no databases, no paid APIs. The one-click launcher includes a
