@@ -55,13 +55,15 @@ python3 server.py
   uploaded by accident.
 - **AI Concierge** — chat for recommendations. Runs 100% locally on your GPU via WebGPU
   (WebLLM). It defaults to **⌂ Library** mode, where even "what should I watch?" stays
-  inside titles saved in Linkflix. Use the top **◎ Outside** icon to allow outside
+  inside titles saved in Linkflix. Library-only recommendation requests use a grounded
+  shortlist first: Linkflix scores real saved titles by type, genre, inferred mood tags
+  such as funny/dark/mystery/sci-fi, continue-watching state and playable links, then
+  shows styled playable cards. Use the top **◎ Outside** icon to allow outside
   suggestions when you explicitly ask for them; without a Brave key those ideas come
   from the model's own film/TV knowledge, and with a Brave key it can add search
-  context. Library titles appear as clickable play-cards; outside titles are clearly
-  marked as not in Linkflix. Ask for a library playlist, say "yes", and it turns a
-  curated local-library lineup into styled play cards. First message downloads a small
-  model (~0.9 GB) once, then it's cached.
+  context. Outside titles are clearly marked as not in Linkflix. Ask for a library
+  playlist, say "yes", and it turns a curated local-library lineup into styled play
+  cards. First message downloads a small model (~0.9 GB) once, then it's cached.
 - **Rotating showcase** — the big featured banner picks five random titles on start,
   cycles through them every few seconds, and has arrow + refresh controls for manual
   browsing.
@@ -78,7 +80,26 @@ python3 server.py
   watched unless you drop that file in the folder too.
 - **Live search, JSON export/import.**
 - **Concierge snapshot refresh** — the AI reads a cached library snapshot when opened;
-  press its small ⟳ button to rebuild that context after library changes.
+  every open rebuilds the context from the current library and Continue Watching, and
+  the small ⟳ button can refresh it manually too.
+
+## How it works
+
+- **Frontend:** one HTML page (`index.html`), plain CSS (`css/styles.css`) and vanilla
+  JavaScript (`js/app.js`). No framework, bundler or build step.
+- **Local server:** `server.py` serves the files and exposes one same-origin endpoint,
+  `POST /api/save-library`, which atomically writes `library/library.json`. It listens
+  on local loopback only. The app still works from a plain static server, but disk
+  autosave needs `server.py`.
+- **Storage:** browser localStorage is the fast source of truth while the app is open;
+  the local server mirrors the library to `library/library.json`. Continue Watching
+  stays in localStorage unless you explicitly export/drop in `library/watch.json`.
+- **Metadata:** TV shows use TVMaze search/show IDs/episode APIs. Movies use Wikipedia
+  page summaries. Both are free and keyless. Brave Search is optional and only used
+  for outside-suggestion context when the user enables it and provides a key.
+- **AI safety:** Library mode never recommends outside titles. The deterministic
+  shortlist returns saved title IDs, and the chat cards are rendered from those IDs so
+  playable suggestions stay grounded in your library.
 
 ## Controls
 
