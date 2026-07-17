@@ -21,7 +21,8 @@ export const state = {
       allowOutsideSuggestions: false,
       useBraveSearch: false,
       groupByGenre: true,
-      groundToLibrary: true
+      groundToLibrary: true,
+      mediaRoots: []
     },
     store.get('settings', {})),
   view: { name: 'home' },

@@ -7,6 +7,7 @@ import { searchTVMaze, tvmazeShow, tvmazeEpisodes, wikiSummary, wikiLookup, with
 import { render, removeFromContinueWatching } from './views.js';
 import { syncSuggestionScopeUi } from './concierge.js';
 import { focusFirst } from './nav.js';
+import { openScanFlow } from './scan.js';
 
 export function closeModal() { $('#modal-root').innerHTML = ''; focusFirst(); }
 export function modalOpen() { return !!$('#modal-root').firstElementChild; }
@@ -403,6 +404,16 @@ export function openSettings() {
         <div class="field"><label>Behaviour</label>
           <label class="check-row"><input type="checkbox" id="f-group"
             ${state.settings.groupByGenre ? 'checked' : ''}> Group home rows by genre automatically</label></div>
+        <div class="field"><label>Local media — auto-classify your files</label>
+          <div class="hero-actions">
+            <button type="button" class="pill-btn accent" id="btn-scan">⟳ Scan media folders</button>
+            <button type="button" class="pill-btn" id="btn-add-root">＋ Add folder</button>
+          </div>
+          <div id="media-roots" class="media-roots"></div>
+          <div class="hint">Drop movies/shows into the app's <b>Media/</b> folder, or add any
+            folder on your Mac. Scanning reads the names, matches TVMaze / Wikipedia, and adds
+            them — asking you to confirm anything it can't identify. Local paths stay out of
+            shared library.json.</div></div>
         <div class="field"><label>Continue Watching</label>
           <div class="hero-actions">
             <button type="button" class="pill-btn danger" id="btn-clear-watch"
@@ -475,6 +486,35 @@ export function openSettings() {
     toast('watch.json downloaded — sharing it is optional');
   });
   $('#btn-import').addEventListener('click', importLibraryFile);
+
+  // ---- local media folders ----
+  const renderRoots = () => {
+    const box = $('#media-roots');
+    const roots = state.settings.mediaRoots || [];
+    box.innerHTML = `<div class="root-chip default">📁 Media/ (in the app)</div>` +
+      roots.map((r, i) => `<div class="root-chip">📁 ${esc(r)}
+        <button type="button" class="root-x" data-remove-root="${i}" title="Remove">✕</button></div>`).join('');
+  };
+  renderRoots();
+  $('#media-roots').addEventListener('click', e => {
+    const rm = e.target.closest('[data-remove-root]');
+    if (rm) {
+      state.settings.mediaRoots.splice(+rm.dataset.removeRoot, 1);
+      saveSettings(); renderRoots();
+    }
+  });
+  $('#btn-add-root').addEventListener('click', async () => {
+    if (!window.linkflix?.pickFolder) { toast('Adding folders needs the desktop app'); return; }
+    const dir = await window.linkflix.pickFolder();
+    if (!dir) return;
+    state.settings.mediaRoots = state.settings.mediaRoots || [];
+    if (!state.settings.mediaRoots.includes(dir)) {
+      state.settings.mediaRoots.push(dir);
+      saveSettings(); renderRoots();
+      toast('Folder added — press Scan');
+    }
+  });
+  $('#btn-scan').addEventListener('click', () => openScanFlow());
 
   // populate the model picker with whatever Ollama models are installed
   (async () => {

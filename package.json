@@ -10,9 +10,24 @@
     "dist": "electron-builder --mac"
   },
   "devDependencies": {
-    "electron": "^43.1.1"
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
+    "ffmpeg-static": "^5.3.0",
     "hls.js": "^1.6.16"
+  },
+  "build": {
+    "appId": "com.yuuv.linkflix",
+    "productName": "Linkflix",
+    "asar": false,
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["index.html", "css/**/*", "js/**/*", "electron/**/*"],
+    "mac": {
+      "target": ["dir"],
+      "category": "public.app-category.entertainment",
+      "icon": "build/icon.icns",
+      "identity": null
+    }
   }
 }

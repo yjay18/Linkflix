@@ -4,8 +4,32 @@
 
 const { app, BrowserWindow, shell, Menu, ipcMain, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { startServer } = require('./server');
 const media = require('./media');
+
+const STATIC_ROOT = path.join(__dirname, '..');   // app code: index.html, css/, js/
+// Writable data (library.json, watch.json, Media/). In the packaged app the bundle is
+// read-only, so data lives in a visible ~/Movies/Linkflix folder; in dev it's the project
+// root. (Deliberately not ~/Linkflix — on a case-insensitive Mac that collides with the
+// ~/linkflix project directory.)
+const DATA_ROOT = app.isPackaged ? path.join(app.getPath('videos'), 'Linkflix') : STATIC_ROOT;
+
+function prepareDataDir() {
+  try {
+    fs.mkdirSync(path.join(DATA_ROOT, 'library'), { recursive: true });
+    fs.mkdirSync(path.join(DATA_ROOT, 'Media'), { recursive: true });
+  } catch { /* best effort */ }
+}
+
+// Bundled ffmpeg (ffmpeg-static) so local playback works without a system install.
+function resolveFfmpeg() {
+  try {
+    let p = require('ffmpeg-static');
+    if (p && app.isPackaged) p = p.replace('app.asar', 'app.asar.unpacked');
+    if (p && fs.existsSync(p)) { fs.chmodSync(p, 0o755); process.env.FFMPEG_PATH = p; }
+  } catch { /* fall back to `ffmpeg` on PATH */ }
+}
 
 ipcMain.handle('pick-video-file', async () => {
   const r = await dialog.showOpenDialog(mainWindow, {
@@ -24,14 +48,13 @@ ipcMain.handle('pick-folder', async () => {
   return r.canceled ? null : r.filePaths[0];
 });
 
-const ROOT = path.join(__dirname, '..');   // project root: index.html, css/, js/, library/
 let mainWindow = null;
 let serverInfo = null;
 
 async function createWindow() {
   if (!serverInfo) {
-    serverInfo = await startServer(ROOT, Number(process.env.LINKFLIX_PORT) || 4174);
-    console.log(`[linkflix] serving ${ROOT} on http://127.0.0.1:${serverInfo.port}`);
+    serverInfo = await startServer(STATIC_ROOT, Number(process.env.LINKFLIX_PORT) || 4174, DATA_ROOT);
+    console.log(`[linkflix] app=${STATIC_ROOT} data=${DATA_ROOT} on http://127.0.0.1:${serverInfo.port}`);
   }
 
   mainWindow = new BrowserWindow({
@@ -88,6 +111,8 @@ function buildMenu() {
 }
 
 app.whenReady().then(() => {
+  prepareDataDir();
+  resolveFfmpeg();
   buildMenu();
   createWindow();
   app.on('activate', () => {

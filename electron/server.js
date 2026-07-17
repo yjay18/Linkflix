@@ -8,6 +8,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const media = require('./media');
+const scanner = require('./scanner');
 
 const MEDIA_MIME = {
   '.m3u8': 'application/vnd.apple.mpegurl',
@@ -112,12 +113,14 @@ async function saveLibrary(rootDir, payload) {
   return path.relative(rootDir, target);
 }
 
-function serveStatic(rootDir, req, res) {
+function serveStatic(staticRoot, dataRoot, req, res) {
   let urlPath = decodeURIComponent(req.url.split('?')[0]);
   if (urlPath === '/' || urlPath === '') urlPath = '/index.html';
-  const filePath = path.normalize(path.join(rootDir, urlPath));
-  // path-traversal guard: never serve outside the project root
-  if (filePath !== rootDir && !filePath.startsWith(rootDir + path.sep))
+  // library.json / watch.json live in the writable data root; everything else is app code
+  const base = urlPath.startsWith('/library/') ? dataRoot : staticRoot;
+  const filePath = path.normalize(path.join(base, urlPath));
+  // path-traversal guard: never serve outside the root
+  if (filePath !== base && !filePath.startsWith(base + path.sep))
     return send(res, 403, 'Forbidden');
   fs.stat(filePath, (err, stat) => {
     if (err || !stat.isFile()) return send(res, 404, 'Not found');
@@ -129,6 +132,33 @@ function serveStatic(rootDir, req, res) {
     if (req.method === 'HEAD') return res.end();
     fs.createReadStream(filePath).pipe(res);
   });
+}
+
+/* Collect every local file path already linked in the saved library. */
+async function knownLocalPaths(rootDir) {
+  const set = new Set();
+  try {
+    const lib = JSON.parse(await fsp.readFile(path.join(rootDir, 'library', 'library.json'), 'utf8')).library || [];
+    for (const item of lib) {
+      if (item.localPath) set.add(item.localPath);
+      for (const s of item.seasons || [])
+        for (const ep of s.episodes || []) if (ep.localPath) set.add(ep.localPath);
+    }
+  } catch { /* no library yet */ }
+  return set;
+}
+
+/* POST /api/scan { roots:[abs...] } — walk the default Media/ folder plus any
+   user folders, return parsed movie/show candidates. */
+async function handleScan(rootDir, res, body) {
+  let payload = {};
+  try { payload = JSON.parse(body || '{}'); } catch { /* defaults */ }
+  const roots = [path.join(rootDir, 'Media'), ...(Array.isArray(payload.roots) ? payload.roots : [])]
+    .filter(Boolean);
+  const uniq = [...new Set(roots.map(r => path.resolve(r)))];
+  const known = await knownLocalPaths(rootDir);
+  const result = await scanner.scanRoots(uniq, known);
+  send(res, 200, JSON.stringify({ ok: true, roots: uniq, ...result }), { 'Content-Type': 'application/json' });
 }
 
 /* Resolve a playable local path from the SAVED library (never from the URL) —
@@ -199,11 +229,11 @@ async function handleMedia(rootDir, res, pathname) {
   return false;
 }
 
-function handle(rootDir, req, res) {
+function handle(staticRoot, dataRoot, req, res) {
   const pathname = req.url.split('?')[0];
   if (req.method === 'GET' &&
       (pathname.startsWith('/probe/') || pathname.startsWith('/hls/') || pathname.startsWith('/subs/'))) {
-    handleMedia(rootDir, res, pathname)
+    handleMedia(dataRoot, res, pathname)
       .then(done => { if (!done) send(res, 404, 'Not found'); })
       .catch(err => send(res, 500, JSON.stringify({ error: String(err.message || err) }), { 'Content-Type': 'application/json' }));
     return;
@@ -215,6 +245,13 @@ function handle(rootDir, req, res) {
     req.on('end', () => ollamaConcierge(res, body));
     return;
   }
+  if (req.method === 'POST' && pathname === '/api/scan') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1 * 1024 * 1024) req.destroy(); });
+    req.on('end', () => handleScan(dataRoot, res, body)
+      .catch(e => send(res, 500, JSON.stringify({ ok: false, error: String(e.message || e) }), { 'Content-Type': 'application/json' })));
+    return;
+  }
   if (req.method === 'POST' && pathname === '/api/save-library') {
     let body = '';
     req.on('data', c => {
@@ -223,7 +260,7 @@ function handle(rootDir, req, res) {
     });
     req.on('end', async () => {
       try {
-        const rel = await saveLibrary(rootDir, JSON.parse(body || '{}'));
+        const rel = await saveLibrary(dataRoot, JSON.parse(body || '{}'));
         send(res, 200, JSON.stringify({ ok: true, path: rel }),
           { 'Content-Type': 'application/json' });
       } catch (e) {
@@ -233,15 +270,16 @@ function handle(rootDir, req, res) {
     });
     return;
   }
-  if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(rootDir, req, res);
+  if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(staticRoot, dataRoot, req, res);
   send(res, 405, 'Method not allowed');
 }
 
 /* Start on preferredPort, walking forward a few ports if it's taken.
+   `dataRoot` (writable: library/, Media/) defaults to staticRoot for dev.
    Resolves { server, port }. */
-function startServer(rootDir, preferredPort = 4174) {
+function startServer(staticRoot, preferredPort = 4174, dataRoot = staticRoot) {
   return new Promise((resolve, reject) => {
-    const server = http.createServer((req, res) => handle(rootDir, req, res));
+    const server = http.createServer((req, res) => handle(staticRoot, dataRoot, req, res));
     let port = preferredPort;
     const maxPort = preferredPort + 25;
     let settled = false;
