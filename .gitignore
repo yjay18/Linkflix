@@ -10,6 +10,11 @@ watch.json
 .codex/
 .agents/
 
+# Electron / node
+node_modules/
+dist/
+out/
+
 # OS noise
 .DS_Store
 Thumbs.db

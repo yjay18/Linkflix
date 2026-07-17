@@ -1,0 +1,15 @@
+{
+  "name": "linkflix",
+  "version": "1.0.0",
+  "description": "Personal Netflix for your Google Drive links and local media — a native Mac app.",
+  "private": true,
+  "author": "Yuuv",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^43.1.1"
+  }
+}
