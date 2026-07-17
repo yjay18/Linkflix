@@ -2,7 +2,7 @@
    The app is split into focused ES modules:
      dom        — DOM helpers ($, $$, esc, toast)
      state      — shared mutable state + localStorage/disk persistence
-     drive      — Google Drive link parsing
+     drive      — Drive link parsing
      covers     — image upload + generated cover art
      format     — date / meta formatting
      taxonomy   — genre/category/tag intelligence, playability

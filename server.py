@@ -11,11 +11,13 @@ from pathlib import Path
 import socket
 import tempfile
 import threading
+import urllib.request
 
 
 ROOT = Path(__file__).resolve().parent
 LIBRARY_DIR = ROOT / "library"
 PORT = int(os.environ.get("LINKFLIX_PORT", "4173"))
+OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 
 
 class LinkflixServer(ThreadingHTTPServer):
@@ -34,8 +36,62 @@ class LinkflixHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
+    def _json(self, status, obj):
+        body = json.dumps(obj).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path.split("?", 1)[0] == "/api/models":
+            try:
+                with urllib.request.urlopen(OLLAMA + "/api/tags", timeout=5) as r:
+                    data = json.load(r)
+                self._json(200, {"models": [m["name"] for m in data.get("models", [])]})
+            except Exception as exc:
+                self._json(502, {"models": [], "error": f"Ollama not reachable: {exc}"})
+            return
+        super().do_GET()
+
+    def handle_concierge(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+        except Exception:
+            self._json(400, {"error": "bad JSON"})
+            return
+        upstream_body = json.dumps({
+            "model": payload.get("model") or "llama3.2",
+            "messages": payload.get("messages") or [],
+            "stream": True,
+            "options": {"temperature": payload.get("temperature", 0.4)},
+        }).encode()
+        req = urllib.request.Request(
+            OLLAMA + "/api/chat", data=upstream_body,
+            headers={"Content-Type": "application/json"})
+        try:
+            upstream = urllib.request.urlopen(req, timeout=300)
+        except Exception as exc:
+            self._json(502, {"error": f"Ollama not reachable at {OLLAMA}: {exc}"})
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.end_headers()
+        try:
+            for line in upstream:                 # Ollama streams one JSON object per line
+                self.wfile.write(line)
+                self.wfile.flush()
+        except Exception:
+            pass
+
     def do_POST(self):
-        if self.path.split("?", 1)[0] != "/api/save-library":
+        path = self.path.split("?", 1)[0]
+        if path == "/api/concierge":
+            self.handle_concierge()
+            return
+        if path != "/api/save-library":
             self.send_error(404, "Not found")
             return
 

@@ -72,7 +72,7 @@ $('#view').addEventListener('mouseover', e => {
   clearTimeout(popHideTimer);
   if (card.dataset.open === popCardId && !pop.hidden) return;
   clearTimeout(popShowTimer);
-  popShowTimer = setTimeout(() => showPop(card), 420);
+  popShowTimer = setTimeout(() => showPop(card), 750);   // dwell before the preview opens
 });
 $('#view').addEventListener('mouseout', e => {
   const card = e.target.closest('.card[data-open]');

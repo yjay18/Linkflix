@@ -2,9 +2,27 @@
    Starts the internal HTTP backend, then opens a native window pointed at it.
    External http(s) links (Google Drive) open in the user's default browser. */
 
-const { app, BrowserWindow, shell, Menu } = require('electron');
+const { app, BrowserWindow, shell, Menu, ipcMain, dialog } = require('electron');
 const path = require('path');
 const { startServer } = require('./server');
+const media = require('./media');
+
+ipcMain.handle('pick-video-file', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose a video file',
+    properties: ['openFile'],
+    filters: [{ name: 'Video', extensions: ['mkv', 'mp4', 'm4v', 'mov', 'avi', 'webm', 'ts', 'wmv'] }]
+  });
+  return r.canceled ? null : r.filePaths[0];
+});
+
+ipcMain.handle('pick-folder', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose a media folder',
+    properties: ['openDirectory']
+  });
+  return r.canceled ? null : r.filePaths[0];
+});
 
 const ROOT = path.join(__dirname, '..');   // project root: index.html, css/, js/, library/
 let mainWindow = null;
@@ -25,6 +43,7 @@ async function createWindow() {
     title: 'Linkflix',
     show: false,
     webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false
@@ -75,6 +94,8 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+app.on('before-quit', () => { try { media.killAllSessions(); } catch { /* nothing to clean */ } });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

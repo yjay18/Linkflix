@@ -8,13 +8,27 @@ import { driveFileId, embedUrl } from './drive.js';
 import { hidePop } from './hover.js';
 import { focusFirst } from './nav.js';
 import { openAddModal, loadFromFolder, importLibraryFile } from './modals.js';
+import { initLocalPlayer, destroyLocalPlayer } from './player.js';
+
+function localPathFor(item, s = 0, e = 0) {
+  if (!item) return '';
+  return item.type === 'movie'
+    ? (item.localPath || '')
+    : (item.seasons?.[s]?.episodes?.[e]?.localPath || '');
+}
 
 export function render() {
   hidePop();
+  destroyLocalPlayer();
   const main = $('#view');
   if (state.view.name === 'home')   main.innerHTML = homeHtml();
   if (state.view.name === 'detail') main.innerHTML = detailHtml(state.view.id);
-  if (state.view.name === 'player') { main.innerHTML = playerHtml(state.view); }
+  if (state.view.name === 'player') {
+    main.innerHTML = playerHtml(state.view);
+    const { id, s = 0, e = 0 } = state.view;
+    if (localPathFor(state.library.find(i => i.id === id), s, e))
+      initLocalPlayer(id, s, e);
+  }
   bindView();
   focusFirst();
 }
@@ -168,7 +182,7 @@ function homeHtml() {
     return `<div class="empty glass">
       <div class="big">🎬</div>
       <h2>Welcome to Linkflix</h2>
-      <p>Your personal cinema. Add a movie or show with a Google Drive link —
+      <p>Your personal cinema. Add a movie or show with a Drive link —
          or load a shared library.</p>
       <div class="hero-actions" data-navrow>
         <button class="pill-btn accent focusable" data-action="add">＋ Add your first title <kbd>A</kbd></button>
@@ -201,8 +215,10 @@ function homeHtml() {
   let genreRows = '';
   if (state.settings.groupByGenre) genreRows = groupedRowsHtml(items);
 
+  const watchedRow = rowHtml('Watched', items.filter(i => i.watched));
+
   const body =
-    hero + cw + genreRows +
+    hero + cw + watchedRow + genreRows +
     rowHtml('Movies', items.filter(i => i.type === 'movie')) +
     rowHtml('TV Shows', items.filter(i => i.type === 'show'));
 
@@ -220,12 +236,18 @@ function detailHtml(id) {
   const head = `<section class="hero glass">
     <div class="hero-backdrop" style="background:${coverSrc(item)
       ? `url('${esc(coverSrc(item))}') center/cover` : gradientFor(item.title)}"></div>
+    <button class="hero-mark ${item.watched ? 'on' : ''} focusable" data-toggle-watched="${item.id}"
+      title="${item.watched ? 'Watched — click to unmark' : 'Mark as watched'}"
+      aria-label="${item.watched ? 'Watched — click to unmark' : 'Mark as watched'}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11"/></svg>
+    </button>
     <div class="hero-cover card" style="cursor:default">${coverHtml(item)}</div>
     <div class="hero-info">
       <div class="badges">
         <span class="badge">${item.type === 'show' ? 'Series' : 'Film'}</span>
         ${item.genre ? `<span class="badge">${esc(item.genre)}</span>` : ''}
         ${dates ? `<span class="badge">${esc(dates)}</span>` : ''}
+        ${item.watched ? '<span class="badge watched">✓ Watched</span>' : ''}
       </div>
       <h1>${esc(item.title)}</h1>
       <p class="hero-sub">${esc(item.subtitle || '')}</p>
@@ -278,10 +300,11 @@ function detailHtml(id) {
 function playerHtml({ id, s, e }) {
   const item = state.library.find(i => i.id === id);
   if (!item) { state.view = { name: 'home' }; return homeHtml(); }
-  let link = item.link, sub = 'Movie';
+  let link = item.link, localPath = item.localPath, sub = 'Movie';
   if (item.type === 'show') {
     const ep = item.seasons?.[s]?.episodes?.[e];
     link = ep?.link;
+    localPath = ep?.localPath;
     sub = `S${s + 1} · E${e + 1}${ep?.title ? ' — ' + ep.title : ''}${ep?.airdate ? ` · ${formatDate(ep.airdate)}` : ''}`;
   }
   // log for Continue Watching
@@ -289,19 +312,29 @@ function playerHtml({ id, s, e }) {
     ...state.watchLog.filter(w => w.itemId !== id)].slice(0, 20);
   store.set('watchLog', state.watchLog);
 
-  const src = embedUrl(link);
-  const valid = driveFileId(link);
-  return `<div class="player">
-    <div class="player-top glass">
+  const top = `<div class="player-top glass">
       <button class="pill-btn small focusable" data-action="back">← Back <kbd>⎋</kbd></button>
       <span class="pt-title">${esc(item.title)}</span>
       <span class="pt-sub">${esc(sub)}</span>
-    </div>
+    </div>`;
+
+  if (localPath) {
+    return `<div class="player">
+      ${top}
+      <video id="local-video" class="local-video" controls autoplay playsinline crossorigin="anonymous"></video>
+      <div id="player-status" class="player-status"></div>
+    </div>`;
+  }
+
+  const src = embedUrl(link);
+  const valid = driveFileId(link);
+  return `<div class="player">
+    ${top}
     ${valid
       ? `<iframe src="${esc(src)}" allow="autoplay; fullscreen" allowfullscreen></iframe>`
       : `<div class="empty" style="margin:auto"><div class="big">⚠️</div>
-          <h2>That doesn't look like a Google Drive link</h2>
-          <p>${esc(link || 'No link set for this title.')}</p></div>`}
+          <h2>Nothing to play yet</h2>
+          <p>Add a Drive link or a local file for this title.</p></div>`}
   </div>`;
 }
 
@@ -318,47 +351,34 @@ export function removeFromContinueWatching(id) {
   return state.watchLog.length !== before;
 }
 
-function openDriveLink(link) {
-  window.location.href = link;
-  return true;
+function episodePlayable(item, s, e) {
+  const ep = item?.seasons?.[s]?.episodes?.[e];
+  return !!(ep && (ep.localPath || driveFileId(ep.link)));
 }
 
 export function playEpisode(id, s = 0, e = 0) {
   const item = state.library.find(i => i.id === id);
-  const ep = item?.seasons?.[s]?.episodes?.[e];
   if (!item || item.type !== 'show') return false;
-  if (!driveFileId(ep?.link)) {
-    toast('That episode needs a valid Google Drive link first.');
+  if (!episodePlayable(item, s, e)) {
+    toast('That episode needs a Drive link or local file first.');
     return false;
   }
-  rememberWatchPosition(id, s, e);
-  if (!openDriveLink(ep?.link)) return false;
+  state.view = { name: 'player', id, s, e };   // playerHtml logs Continue Watching
+  render();
   return true;
 }
 
-export function playItem(id) {                 // resume where you left off, else episode 1
+export function playItem(id) {                 // resume where you left off, else first playable
   const item = state.library.find(i => i.id === id);
   if (!item) return;
+  const fallback = playablePosition(item) || { s: 0, e: 0 };
+  const log = state.watchLog.find(w => w.itemId === id);
   if (item.type === 'show') {
-    const log = state.watchLog.find(w => w.itemId === id);
-    const fallback = playablePosition(item) || { s: 0, e: 0 };
-    const loggedLink = item.seasons?.[log?.s]?.episodes?.[log?.e]?.link;
-    const canResume = driveFileId(loggedLink);
-    playEpisode(id, canResume ? (log?.s ?? fallback.s) : fallback.s,
-      canResume ? (log?.e ?? fallback.e) : fallback.e);
+    const canResume = log && episodePlayable(item, log.s, log.e);
+    playEpisode(id, canResume ? log.s : fallback.s, canResume ? log.e : fallback.e);
     return;
   }
-  const log = state.watchLog.find(w => w.itemId === id);
-  const loggedLink = item.type === 'show'
-    ? item.seasons?.[log?.s]?.episodes?.[log?.e]?.link
-    : item.link;
-  const fallback = playablePosition(item) || { s: 0, e: 0 };
-  const canResume = item.type === 'movie'
-    ? driveFileId(item.link)
-    : driveFileId(loggedLink);
-  state.view = { name: 'player', id,
-    s: canResume ? (log?.s ?? fallback.s) : fallback.s,
-    e: canResume ? (log?.e ?? fallback.e) : fallback.e };
+  state.view = { name: 'player', id, s: 0, e: 0 };
   render();
 }
 
@@ -400,6 +420,17 @@ function bindView() {
       if (removeFromContinueWatching(clearWatch.dataset.clearWatch)) {
         render();
         toast(`Removed “${item?.title || 'title'}” from Continue Watching`);
+      }
+      return;
+    }
+    const markWatched = e.target.closest('[data-toggle-watched]');
+    if (markWatched) {
+      const item = state.library.find(i => i.id === markWatched.dataset.toggleWatched);
+      if (item) {
+        item.watched = !item.watched;
+        saveLibrary();
+        render();
+        toast(item.watched ? `Marked “${item.title}” as watched ✓` : `Removed “${item.title}” from watched`);
       }
       return;
     }

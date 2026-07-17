@@ -16,7 +16,7 @@ export const state = {
   watchLog: store.get('watchLog', []),          // [{itemId, s, e, ts}]
   settings: Object.assign(
     {
-      model: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',
+      model: 'llama3.2',
       braveKey: '',
       allowOutsideSuggestions: false,
       useBraveSearch: false,
@@ -29,9 +29,9 @@ export const state = {
   conciergeContext: null
 };
 
-// migrate / normalise settings
-if (!String(state.settings.model).includes('MLC'))
-  state.settings.model = 'Llama-3.2-1B-Instruct-q4f16_1-MLC';
+// migrate / normalise settings: old WebLLM (MLC) model ids -> local Ollama model
+if (!state.settings.model || String(state.settings.model).includes('MLC'))
+  state.settings.model = 'llama3.2';
 state.settings.groundToLibrary = true;            // legacy flag; top scope controls outside suggestions
 state.settings.allowOutsideSuggestions = Boolean(state.settings.allowOutsideSuggestions);
 state.settings.useBraveSearch = Boolean(state.settings.useBraveSearch && state.settings.braveKey);

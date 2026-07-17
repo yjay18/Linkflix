@@ -1,17 +1,15 @@
-/* ================= AI Concierge (local WebLLM + grounded recommendations) ================= */
+/* ================= AI Concierge (local, via Ollama) ================= */
 import { state, store, saveSettings } from './state.js';
 import { $, esc, toast } from './dom.js';
 import { coverSrc, gradientFor } from './covers.js';
 import { formatShowDates } from './format.js';
-import { itemRecommendationProfile, isPlayable, labelCase, tagsFromText } from './taxonomy.js';
+import { itemRecommendationProfile, isPlayable } from './taxonomy.js';
 import { braveContext, wantsWebContext } from './metadata.js';
 import { focusFirst } from './nav.js';
 
 let chatLog = store.get('chat', []);          // [{role, text}]
-let pendingPlaylist = store.get('pendingPlaylist', null);
 
 const saveChat = () => { chatLog = chatLog.slice(-40); store.set('chat', chatLog); };
-const savePendingPlaylist = () => store.set('pendingPlaylist', pendingPlaylist);
 
 /* ---------- suggestion scope UI ---------- */
 export function syncSuggestionScopeUi() {
@@ -31,7 +29,7 @@ export function syncSuggestionScopeUi() {
     ? (state.settings.useBraveSearch && state.settings.braveKey
       ? 'Outside suggestions · Brave context on'
       : 'Outside suggestions · model knowledge')
-    : 'Runs locally on your GPU · library-only';
+    : 'Runs locally via Ollama · library-only';
   const input = $('#chat-input');
   if (input) input.placeholder = outside
     ? 'Ask for library or outside ideas…'
@@ -67,17 +65,11 @@ export function renderChat() {
   const box = $('#chat-messages');
   if (!chatLog.length) {
     const outside = state.settings.allowOutsideSuggestions;
-    box.innerHTML = `<div class="msg assistant">Hi! I'm your concierge — I run 100% in your
-browser on your GPU. ${outside
-  ? `Outside suggestions are <b>enabled</b>. ${state.settings.useBraveSearch && state.settings.braveKey
-    ? 'I can use Brave context when useful.'
-    : 'No Brave key is active, so outside ideas come from my model knowledge, not live search.'}`
-  : `I'm in <b>library-only</b> mode. Even “what should I watch?” stays inside your saved titles.`}\n\nUse the top icons:
-⌂ library-only · ◎ outside suggestions\n\nTry:
-${outside
-  ? `“outside suggestions like Severance” or “what should I add next?”`
-  : `“what should I watch from my library?” or “make me a thriller playlist” then say “yes” for playable cards.`}\n\nPress ⟳ in this header to refresh the Concierge's library snapshot.\n
-(First message downloads the model once — ~0.9 GB, then it's cached.)</div>`;
+    box.innerHTML = `<div class="msg assistant">Hi! I'm your concierge — I run locally on your
+Mac through Ollama (${esc(state.settings.model || 'llama3.2')}). Ask me anything about films
+and TV, or just chat. ${outside
+  ? `Outside suggestions are <b>on</b>, so I can point you to great stuff beyond your library too${state.settings.useBraveSearch && state.settings.braveKey ? ', with live Brave search when it helps' : ''}.`
+  : `I'm in <b>library-focused</b> mode — any title I mention that you own turns into a play button.`}\n\nTop icons: ⌂ library-focused · ◎ outside suggestions. Press ⟳ to refresh my snapshot of your library.</div>`;
     return;
   }
   box.innerHTML = chatLog.map(m =>
@@ -126,111 +118,9 @@ function chatCardsHtml(cards, opts = {}) {
   }).join('')}</div>`;
 }
 
-const STOP_WORDS = new Set('a an and are as at be by for from give i in is it make me my of on or please something the to watch with you your show shows series episode episodes movie movies film films title titles tonight'.split(' '));
-
-function isPlaylistIntent(text) {
-  return /\b(playlist|queue|lineup|curate|watchlist|movie night|binge)\b/i.test(text);
-}
-
+// used only to decide whether to fetch optional Brave web context before the model runs
 function isRecommendationIntent(text) {
   return /\b(recommend|suggest|what should i watch|what to watch|pick|choose|find me|something like|similar to|playlist|queue|lineup|curate|watchlist|movie night|binge|good|best|tonight|mood)\b/i.test(text);
-}
-
-function isAffirmation(text) {
-  return /^(yes|yeah|yep|yup|sure|ok|okay|do it|please do|go ahead|sounds good|make it)\b/i.test(text.trim());
-}
-
-function isRejection(text) {
-  return /^(no|nope|nah|cancel|stop|not now)\b/i.test(text.trim());
-}
-
-function preferenceTokens(text) {
-  return String(text || '').toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .split(/\s+/)
-    .filter(w => w.length > 2 && !STOP_WORDS.has(w));
-}
-
-function queryPreferenceTags(query) {
-  return tagsFromText(query);
-}
-
-function playlistReason(item, tokens, queryTags = []) {
-  const profile = itemRecommendationProfile(item);
-  const tagMatches = queryTags.filter(t => profile.tags.includes(t));
-  if (tagMatches.length && profile.categories.length)
-    return `Tagged ${tagMatches.slice(0, 2).join(' + ')} · ${profile.categories.slice(0, 2).join(' + ')}.`;
-  if (tagMatches.length) return `Tagged ${tagMatches.slice(0, 2).join(' + ')}.`;
-  const matched = tokens.find(t => profile.text.toLowerCase().includes(t));
-  if (matched) return `Matches “${matched}” in this title's details.`;
-  if (profile.categories.length) return `Fits ${profile.categories.slice(0, 2).join(' + ')}.`;
-  return item.type === 'show' ? 'A series from your saved library.' : 'A film from your saved library.';
-}
-
-function recommendationItems(query, limit = 3) {
-  const playlist = curatePlaylist(query, Math.max(limit, 6)).items;
-  const wantsShow = /\b(show|shows|series|episode|binge)\b/i.test(query);
-  const wantsMovie = /\b(movie|movies|film|films)\b/i.test(query);
-  const typed = playlist.filter(x =>
-    (wantsShow && x.item.type === 'show') || (wantsMovie && x.item.type === 'movie'));
-  return (typed.length ? typed : playlist).slice(0, limit);
-}
-
-function recommendationIntro(items, query) {
-  const playable = items.filter(x => isPlayable(x.item)).length;
-  if (!items.length) return 'I could not find any saved titles to recommend from your library yet.';
-  const linkNote = playable ? '' : ' These will need valid Google Drive links before playback works.';
-  return `From your library, I would pick ${items[0].item.title} tonight.${linkNote}\n\nI kept this strictly to saved Linkflix titles.`;
-}
-
-function curatePlaylist(query, limit = 6) {
-  const playable = state.library.filter(isPlayable);
-  const pool = playable.length ? playable : state.library;
-  const tokens = preferenceTokens(query);
-  const queryTags = queryPreferenceTags(query);
-  const wantsShow = /\b(show|shows|series|episode|binge)\b/i.test(query);
-  const wantsMovie = /\b(movie|movies|film|films)\b/i.test(query);
-  const scored = pool.map((item, idx) => {
-    const profile = itemRecommendationProfile(item);
-    const text = profile.text.toLowerCase();
-    const cats = profile.categories.join(' ').toLowerCase();
-    let score = 0;
-    const matchedTags = queryTags.filter(t => profile.tags.includes(t));
-    score += matchedTags.length * 7;
-    for (const t of tokens) {
-      if (item.title.toLowerCase().includes(t)) score += 5;
-      if (String(item.genre || '').toLowerCase().includes(t)) score += 4;
-      if (cats.includes(t)) score += 3;
-      if (text.includes(t)) score += 2;
-    }
-    if (queryTags.length && !matchedTags.length) score -= 2;
-    if (wantsShow && item.type === 'show') score += 3;
-    if (wantsMovie && item.type === 'movie') score += 3;
-    if (state.watchLog.some(w => w.itemId === item.id)) score += 1;
-    score += Math.max(0, 2 - idx / 100);       // stable tie-breaker: newer additions first
-    return { item, score, reason: playlistReason(item, tokens, queryTags) };
-  }).sort((a, b) => b.score - a.score);
-  const picked = scored.slice(0, Math.min(limit, scored.length));
-  const theme = tokens.find(t => !['playlist', 'queue', 'lineup', 'curate', 'watchlist'].includes(t));
-  return {
-    title: theme ? `${labelCase(theme)} playlist` : 'library playlist',
-    items: picked,
-    hasPlayableLinks: Boolean(playable.length)
-  };
-}
-
-function pendingPlaylistCards() {
-  if (!pendingPlaylist?.ids?.length) return [];
-  return pendingPlaylist.ids.map((id, idx) => ({
-    item: state.library.find(i => i.id === id),
-    reason: pendingPlaylist.reasons?.[idx] || ''
-  })).filter(x => x.item);
-}
-
-function pushAssistant(text, extra = {}) {
-  chatLog.push({ role: 'assistant', text, ...extra });
-  saveChat();
-  renderChat();
 }
 
 function continueSummary() {
@@ -281,9 +171,7 @@ export function refreshConciergeContext(showToast = false) {
   if (showToast) toast('Concierge context refreshed ✓');
 }
 
-/* --- WebLLM engine (runs on your GPU via WebGPU — no API, no key) --- */
-let engine = null, engineModelId = null;
-
+/* --- Local LLM via Ollama, proxied through the app server (same-origin, no CORS) --- */
 function setChatStatus(text) {
   let s = $('#chat-status');
   if (!s) {
@@ -295,17 +183,40 @@ function setChatStatus(text) {
   $('#chat-messages').scrollTop = $('#chat-messages').scrollHeight;
 }
 
-async function ensureEngine() {
-  if (engine && engineModelId === state.settings.model) return engine;
-  if (!navigator.gpu)
-    throw new Error('WebGPU is not available in this browser. Use a recent Chrome, Edge or Safari.');
-  setChatStatus('Loading model… first time downloads it, then it is cached.');
-  const webllm = await import('https://esm.run/@mlc-ai/web-llm');
-  engine = await webllm.CreateMLCEngine(state.settings.model, {
-    initProgressCallback: p => setChatStatus(p.text)
+// POST to /api/concierge and read Ollama's NDJSON stream, firing onToken per delta.
+async function streamOllama(messages, temperature, onToken) {
+  const res = await fetch('/api/concierge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: state.settings.model || 'llama3.2', messages, temperature })
   });
-  engineModelId = state.settings.model;
-  return engine;
+  if (!res.ok || !res.body) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); if (j.error) msg = j.error; } catch { /* keep status */ }
+    throw new Error(msg);
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      let obj;
+      try { obj = JSON.parse(line); } catch { continue; }
+      if (obj.error) throw new Error(obj.error);
+      const delta = obj.message?.content || '';
+      if (delta) onToken(delta);
+      if (obj.done) return;
+    }
+  }
+  const tail = buf.trim();
+  if (tail) { try { const o = JSON.parse(tail); if (o.message?.content) onToken(o.message.content); } catch { /* ignore */ } }
 }
 
 export async function sendChat(text) {
@@ -316,75 +227,8 @@ export async function sendChat(text) {
   const outsideMode = state.settings.allowOutsideSuggestions;
   const wantsRecommendation = isRecommendationIntent(text);
 
-  if (pendingPlaylist && isAffirmation(text)) {
-    const cards = pendingPlaylistCards();
-    const playlistTitle = pendingPlaylist.title || 'library playlist';
-    pendingPlaylist = null;
-    savePendingPlaylist();
-    if (!cards.length) {
-      pushAssistant('That playlist went stale because those titles are no longer in your library.');
-      return;
-    }
-    pushAssistant(`Yes — here is your ${cards.length}-title ${playlistTitle}. Every card below is from your saved library.`,
-      {
-        cards: cards.map(c => c.item.id),
-        cardReasons: cards.map(c => c.reason),
-        cardStyle: 'playlist'
-      });
-    return;
-  }
-
-  if (pendingPlaylist && isRejection(text)) {
-    pendingPlaylist = null;
-    savePendingPlaylist();
-    pushAssistant('No problem — I cleared that playlist idea.');
-    return;
-  }
-
-  const wantsLocalPlaylist = isPlaylistIntent(text) &&
-    (!outsideMode || /\b(library|saved|local|linkflix|my titles|what i have|playable)\b/i.test(text));
-  if (wantsLocalPlaylist) {
-    if (!state.library.length) {
-      pushAssistant('Your library is empty right now, so I cannot curate a playlist yet. Add a few linked titles first and I will keep it strictly local.');
-      return;
-    }
-    const playlist = curatePlaylist(text);
-    if (!playlist.items.length) {
-      pushAssistant('I could not find any saved titles to build that playlist from yet.');
-      return;
-    }
-    pendingPlaylist = {
-      title: playlist.title,
-      ids: playlist.items.map(x => x.item.id),
-      reasons: playlist.items.map(x => x.reason),
-      ts: Date.now()
-    };
-    savePendingPlaylist();
-    const names = playlist.items.slice(0, 4).map(x => x.item.title).join(', ');
-    const linkNote = playlist.hasPlayableLinks
-      ? ''
-      : ' A heads-up: these titles need valid Google Drive links before playback will work.';
-    pushAssistant(`I found a ${playlist.items.length}-title ${playlist.title} from your library: ${names}${playlist.items.length > 4 ? ', and more' : ''}.${linkNote}\n\nSay yes and I will turn it into playable cards.`);
-    return;
-  }
-
-  if (!outsideMode && wantsRecommendation) {
-    if (!state.library.length) {
-      pushAssistant('Your library is empty right now, so I cannot suggest anything yet. Add a few linked titles first and I will keep recommendations strictly local.');
-      return;
-    }
-    const items = recommendationItems(text);
-    if (!items.length) {
-      pushAssistant('I could not find a saved title that fits that request. I can only suggest from your Linkflix library while library-only mode is on.');
-      return;
-    }
-    pushAssistant(recommendationIntro(items, text), {
-      cards: items.map(x => x.item.id),
-      cardReasons: items.map(x => x.reason)
-    });
-    return;
-  }
-
+  // Everything goes to the model now — no scripted interception. Any library title it
+  // names still becomes a clickable play-card (see chatCardsForMessage / titleCardsHtml).
   let webCtx = '';
   const canSearch = outsideMode && state.settings.useBraveSearch && state.settings.braveKey;
   if (canSearch && (wantsWebContext(text) || wantsRecommendation)) {
@@ -394,73 +238,48 @@ export async function sendChat(text) {
   setChatStatus('thinking…');
 
   try {
-    const eng = await ensureEngine();
     const context = conciergeSnapshot();
-    const prompt = `You are the Linkflix Concierge inside the user's personal
-streaming app.
+    const prompt = `You are the Linkflix Concierge — a warm, sharp, opinionated film and
+TV buff living inside the user's personal streaming app. Talk naturally and freely: chat,
+riff, share real opinions, trivia and hot takes, answer whatever they ask. You don't have
+to recommend something every time — only when it actually fits the conversation.
 
-Suggestion scope selected by the top icon: ${outsideMode ? '◎ OUTSIDE ENABLED' : '⌂ LIBRARY ONLY'}
-${outsideMode
-  ? `Outside recommendations are allowed when, and only when, the user asks for recommendations. The library below is what the user can play in Linkflix; outside titles are ideas to find/add elsewhere.`
-  : `You may ONLY recommend titles from THIS library. The exact list below is the complete set of everything available to watch. Nothing else exists to the user, even for "what should I watch?" requests.`}
-
-LIBRARY (${state.library.length} titles):
+The user's library — the titles they can play right here in the app:
 ${context.library}
 
-Currently partway through (continue watching): ${context.continueWatching}
+Continuing / partway through: ${context.continueWatching}
 
-Latest user message is a recommendation request: ${wantsRecommendation ? 'YES' : 'NO'}
-
-Brave Search setting: ${canSearch
-  ? 'YES. The app may provide Brave context below for outside suggestions.'
-  : (outsideMode
-    ? 'NO active Brave key/search. For outside suggestions, use your general film and TV knowledge; do not claim live or current web access.'
-    : 'NO. Do not search, do not claim you searched, and do not rely on outside recommendations.')}
-${webCtx ? `\nOptional Brave context, for understanding only:\n${webCtx}\n` : ''}
-
-Hard rules:
-- Only recommend, suggest, rank, curate, or pitch titles when "Latest user message is
-  a recommendation request" is YES. If it is NO, answer the exact question without
-  volunteering picks. You may mention library titles only as factual inventory answers,
-  not as recommendations.
-- In ⌂ LIBRARY ONLY scope: recommend ONLY titles from the numbered list above. Never
-  invent, assume, suggest, compare, or mention any movie or show that is not on the
-  list, even if the user asks for something you don't have.
-- In ◎ OUTSIDE ENABLED scope: you may suggest titles outside the library only for
-  recommendation requests. Mark each outside title with "outside library" or "not in
-  Linkflix", and do not imply it can play here. If you mention a library title, write
-  it EXACTLY as listed above so the app can turn it into a play card.
-- If nothing in the library fits while in ⌂ LIBRARY ONLY scope, say so honestly and
-  suggest closest library matches only if the user asked for a recommendation.
-- If the user asks for something current or from the web and Brave Search is not
-  active, say there is no live search active. In ◎ OUTSIDE ENABLED scope you may still
-  use general model knowledge; in ⌂ LIBRARY ONLY scope answer only from the library.
-- If Brave context is present, use it only when ◎ OUTSIDE ENABLED is selected or to
-  understand taste. Do not use Brave context to override ⌂ LIBRARY ONLY scope.
-- In ⌂ LIBRARY ONLY scope, playlist requests use the local playlist-card flow after
-  confirmation. In ◎ OUTSIDE ENABLED scope, you may curate a plain-text outside list;
-  outside titles will not be playable cards.
-- For library-only "what should I watch?" requests, first consider whether they should
-  continue an unfinished show from the continue-watching list.
-- Base your picks on the genres and descriptions given. Keep replies short and
-  conversational — a few picks with a one-line reason each. Plain text, no markdown.`;
+A few things that make you more useful (not rigid rules):
+- When you mention a title that's in the library above, write it EXACTLY as listed — the
+  app turns those into clickable "play" buttons for them.
+- For "what should I watch" moments, lean toward what they own, and feel free to nudge
+  them to finish something they've started.
+- ${outsideMode
+    ? `Outside suggestions are ON, so you're also welcome to bring up great films and shows they don't have yet — just make it clear those aren't in their library.`
+    : `They're in library-focused mode, so keep actual recommendations to titles they own — but you're still free to discuss, compare, and talk about any movie or show under the sun.`}
+${canSearch && webCtx ? `\nFresh web context you can use if handy:\n${webCtx}\n` : ''}
+Keep it conversational and human. Plain text — skip markdown formatting.`;
 
     const messages = [
       { role: 'system', content: prompt },
       ...chatLog.slice(-12).map(m => ({ role: m.role, content: m.text }))
     ];
-    const stream = await eng.chat.completions.create({
-      messages, stream: true, temperature: outsideMode ? 0.7 : 0.35, max_tokens: 400
+    chatLog.push({ role: 'assistant', text: '' });
+    const idx = chatLog.length - 1;
+    await streamOllama(messages, outsideMode ? 0.85 : 0.7, delta => {
+      $('#chat-status')?.remove();
+      chatLog[idx].text += delta;
+      renderChat();
     });
     $('#chat-status')?.remove();
-    chatLog.push({ role: 'assistant', text: '' });
-    for await (const chunk of stream) {
-      chatLog[chatLog.length - 1].text += chunk.choices[0]?.delta?.content || '';
-      renderChat();
-    }
+    if (!chatLog[idx].text) chatLog[idx].text = '(no reply)';
   } catch (err) {
     $('#chat-status')?.remove();
-    chatLog.push({ role: 'assistant', text: `⚠️ ${err.message || err}` });
+    if (chatLog.length && chatLog[chatLog.length - 1].role === 'assistant'
+        && !chatLog[chatLog.length - 1].text)
+      chatLog[chatLog.length - 1].text = `⚠️ ${err.message || err}`;
+    else
+      chatLog.push({ role: 'assistant', text: `⚠️ ${err.message || err}` });
   }
   saveChat();
   renderChat();

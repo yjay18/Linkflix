@@ -1,4 +1,4 @@
-/* ================= Google Drive helpers ================= */
+/* ================= Drive helpers ================= */
 
 export function driveFileId(link) {
   const m = String(link || '').match(/\/file\/d\/([\w-]{10,})/) ||

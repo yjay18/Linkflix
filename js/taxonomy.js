@@ -137,13 +137,15 @@ export function itemCategories(item) {
   return [...labels];
 }
 
+// a title/episode is playable if it has a valid Drive link OR a local file path
 export function playablePosition(item) {
   if (!item) return null;
-  if (item.type === 'movie') return driveFileId(item.link) ? { s: 0, e: 0 } : null;
+  if (item.type === 'movie')
+    return (driveFileId(item.link) || item.localPath) ? { s: 0, e: 0 } : null;
   for (let s = 0; s < (item.seasons || []).length; s++) {
     const episodes = item.seasons[s].episodes || [];
     for (let e = 0; e < episodes.length; e++)
-      if (driveFileId(episodes[e].link)) return { s, e };
+      if (driveFileId(episodes[e].link) || episodes[e].localPath) return { s, e };
   }
   return null;
 }

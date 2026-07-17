@@ -14,11 +14,12 @@ export function modalOpen() { return !!$('#modal-root').firstElementChild; }
 /* ---------- Add / Edit ---------- */
 function epEditorHtml(ep = {}) {
   return `<div class="ep-editor" data-tvmaze-id="${esc(ep.tvmazeId || '')}"
-    data-season="${esc(ep.season ?? '')}" data-number="${esc(ep.number ?? '')}">
+    data-season="${esc(ep.season ?? '')}" data-number="${esc(ep.number ?? '')}"
+    data-local-path="${esc(ep.localPath || '')}">
     <input placeholder="Episode title" class="f-ep-title" value="${esc(ep.title || '')}">
     <input type="date" class="f-ep-airdate" value="${esc(ep.airdate || '')}" title="Air date">
     <textarea rows="2" placeholder="Episode bio / subtitle (optional)" class="f-ep-sub">${esc(ep.subtitle || '')}</textarea>
-    <input placeholder="Google Drive link" class="f-ep-link" value="${esc(ep.link || '')}">
+    <input placeholder="Drive link" class="f-ep-link" value="${esc(ep.link || '')}">
     <button type="button" class="icon-btn" data-remove-ep title="Remove episode">✕</button>
   </div>`;
 }
@@ -159,10 +160,19 @@ export function openAddModal(editId = null) {
               placeholder="https://en.wikipedia.org/wiki/Interstellar_(film)">
             <div class="hint">Use this when movie search picks the wrong page. Open the movie's
               Wikipedia page, copy its URL, then press Auto-fill.</div></div>
-          <div class="field"><label>Google Drive link</label>
+          <div class="field"><label>Drive link</label>
             <input id="f-link" value="${esc(item?.link || '')}"
               placeholder="https://drive.google.com/file/d/…/view">
-            <div class="hint">Share the file as “Anyone with the link” (or stay signed in to Google here).</div></div>
+            <div class="hint">Share the file as “Anyone with the link” (or stay signed in to your account here).</div></div>
+          <div class="field"><label>Local file (plays MKV, MP4, … with subtitles)</label>
+            <div class="hero-actions" style="align-items:center">
+              <button type="button" class="icon-btn" id="btn-pick-local">📁 Choose file…</button>
+              <span class="hint" id="local-status" style="margin:0; word-break:break-all">${item?.localPath
+                ? esc(item.localPath) : ''}</span>
+              ${item?.localPath ? '<button type="button" class="icon-btn" id="btn-clear-local">✕</button>' : ''}
+            </div>
+            <div class="hint">Point at a file on this Mac. It plays in-app via the built-in
+              player — no Drive needed. Local paths stay out of shared library.json.</div></div>
         </div>
 
         <div id="show-fields" ${type === 'movie' ? 'hidden' : ''}>
@@ -211,6 +221,27 @@ export function openAddModal(editId = null) {
 
   let pendingCover = null;                             // uploaded file as data-URL
   const keepUploaded = item?.cover?.startsWith('data:') ? item.cover : null;
+
+  // local file picker (Electron only)
+  let localPath = item?.localPath || '';
+  const pickBtn = $('#btn-pick-local');
+  if (pickBtn) {
+    if (!window.linkflix?.pickVideoFile) {
+      pickBtn.disabled = true;
+      pickBtn.textContent = '📁 Choose file… (desktop app only)';
+    }
+    pickBtn.addEventListener('click', async () => {
+      const p = await window.linkflix?.pickVideoFile?.();
+      if (p) { localPath = p; $('#local-status').textContent = p; }
+    });
+  }
+  form.addEventListener('click', e => {
+    if (e.target.closest('#btn-clear-local')) {
+      localPath = '';
+      const st = $('#local-status'); if (st) st.textContent = '';
+      e.target.closest('#btn-clear-local').remove();
+    }
+  });
 
   $('#btn-upload-cover').addEventListener('click', () => $('#f-cover-file').click());
   $('#f-cover-file').addEventListener('change', async e => {
@@ -316,6 +347,7 @@ export function openAddModal(editId = null) {
     if (curType === 'movie') {
       data.wikiTitle = wikiPageRef($('#f-wiki').value) || currentWikiTitle || item?.wikiTitle || '';
       data.link = $('#f-link').value.trim();
+      if (localPath) data.localPath = localPath;
     } else {
       data.tvmazeId = tvmazeShowRef($('#f-tvmaze').value) || currentTvmazeId || item?.tvmazeId || '';
       data.seasons = $$('.season-editor', form).map(se => ({
@@ -327,8 +359,9 @@ export function openAddModal(editId = null) {
           title: $('.f-ep-title', ee).value.trim(),
           airdate: $('.f-ep-airdate', ee).value.trim(),
           subtitle: $('.f-ep-sub', ee).value.trim(),
-          link: $('.f-ep-link', ee).value.trim()
-        })).filter(ep => ep.title || ep.link)
+          link: $('.f-ep-link', ee).value.trim(),
+          localPath: ee.dataset.localPath || ''
+        })).filter(ep => ep.title || ep.link || ep.localPath)
       })).filter(s => s.episodes.length);
     }
     if (item) state.library = state.library.map(i => i.id === item.id ? data : i);
@@ -350,16 +383,12 @@ export function openSettings() {
     <form class="modal glass" id="settings-form">
       <div class="modal-head"><h2>Settings</h2></div>
       <div class="modal-body">
-        <div class="field"><label>AI Concierge model (runs locally, free)</label>
+        <div class="field"><label>AI Concierge model (runs locally via Ollama)</label>
           <select id="f-model">
-            ${[
-              ['Llama-3.2-1B-Instruct-q4f16_1-MLC',  'Llama 3.2 1B — fastest (~0.9 GB)'],
-              ['Qwen2.5-1.5B-Instruct-q4f16_1-MLC',  'Qwen 2.5 1.5B — balanced (~1 GB)'],
-              ['Llama-3.2-3B-Instruct-q4f16_1-MLC',  'Llama 3.2 3B — smartest (~2 GB)']
-            ].map(([id, label]) =>
-              `<option value="${id}" ${state.settings.model === id ? 'selected' : ''}>${label}</option>`).join('')}
+            <option value="${esc(state.settings.model)}" selected>${esc(state.settings.model)}</option>
           </select>
-          <div class="hint">Downloads once via WebGPU, then cached in your browser. No API, no account.</div></div>
+          <div class="hint">Any model you've pulled with <code>ollama pull</code> appears here.
+            Default is <b>llama3.2</b>. No API, no account, nothing leaves your Mac.</div></div>
         <div class="field"><label>Concierge</label>
           <label class="check-row"><input type="checkbox" id="f-outside"
             ${state.settings.allowOutsideSuggestions ? 'checked' : ''}> Allow outside suggestions when I turn them on
@@ -382,7 +411,7 @@ export function openSettings() {
           <div class="hint">${state.watchLog.length
             ? `This removes ${state.watchLog.length} saved progress entr${state.watchLog.length === 1 ? 'y' : 'ies'} from this browser.`
             : 'There is nothing in Continue Watching right now.'}</div></div>
-        <div class="field"><label>Library folder — share it via Google Drive</label>
+        <div class="field"><label>Library folder — share it via Drive</label>
           <div class="hero-actions">
             <button type="button" class="pill-btn" id="btn-folder-reload">⟳ Reload from folder</button>
             <button type="button" class="pill-btn" id="btn-export">⇩ Export library.json</button>
@@ -390,7 +419,7 @@ export function openSettings() {
             <button type="button" class="pill-btn" id="btn-import">⇧ Import file</button>
           </div>
           <div class="hint">Drop <b>library.json</b> (titles &amp; covers) in the app's <b>library/</b>
-            folder and share that folder — e.g. synced via Google Drive. <b>watch.json</b> holds your
+            folder and share that folder — e.g. synced via Drive. <b>watch.json</b> holds your
             personal watch history / continue-watching; it's a separate file so sharing it is optional.
             Reload picks up both.</div></div>
       </div>
@@ -446,10 +475,29 @@ export function openSettings() {
     toast('watch.json downloaded — sharing it is optional');
   });
   $('#btn-import').addEventListener('click', importLibraryFile);
+
+  // populate the model picker with whatever Ollama models are installed
+  (async () => {
+    try {
+      const r = await fetch('/api/models');
+      const d = await r.json();
+      const models = d.models || [];
+      const sel = $('#f-model');
+      if (!sel || !models.length) return;
+      const norm = s => String(s).replace(/:latest$/, '');   // llama3.2 == llama3.2:latest
+      const cur = state.settings.model;
+      sel.innerHTML = models.map(m =>
+        `<option value="${esc(m)}" ${norm(m) === norm(cur) ? 'selected' : ''}>${esc(m)}</option>`).join('');
+      if (!models.some(m => norm(m) === norm(cur)))
+        sel.insertAdjacentHTML('afterbegin',
+          `<option value="${esc(cur)}" selected>${esc(cur)} — not installed (ollama pull)</option>`);
+    } catch { /* Ollama not reachable — keep the single fallback option */ }
+  })();
+
   $('#f-model').focus();
 }
 
-/* ---------------- Library folder (share it via Google Drive) ---------------- */
+/* ---------------- Library folder (share it via Drive) ---------------- */
 export async function loadFromFolder(silent) {
   try {
     const r = await fetch('library/library.json', { cache: 'no-store' });

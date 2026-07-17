@@ -53,5 +53,6 @@ export function coverHtml(item) {
       onerror="this.remove()">` : ''}
     <div class="cover-fallback">${esc((item.title || '?')[0].toUpperCase())}</div>
     <span class="type-tag">${item.type === 'show' ? 'SERIES' : 'FILM'}</span>
+    ${item.watched ? '<span class="watched-tag" title="Watched">✓</span>' : ''}
   </div>`;
 }
