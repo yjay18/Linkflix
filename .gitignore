@@ -22,3 +22,7 @@ Media/
 
 # bundled mpv (regenerate with scripts/bundle-mpv.sh)
 build/mpv/
+
+# regenerable AI assets (scripts/bundle-model.sh)
+models/
+js/vendor/ort-wasm*.wasm

@@ -96,6 +96,8 @@ function parseVideo(absPath, root) {
   return { kind: 'movie', title: titleCase(title) || rawName, year, rawName, path: absPath };
 }
 
+const EXCLUDE_PATTERN = /\b(extras?|bonus|featurettes?|behind the scenes|deleted scenes|interviews?|trailers?|sample|bloopers?|making of|torrents?)\b/i;
+
 async function walk(dir, out, depth = 0) {
   if (depth > 8) return;
   let entries;
@@ -103,6 +105,8 @@ async function walk(dir, out, depth = 0) {
   catch { return; }
   for (const ent of entries) {
     if (ent.name.startsWith('.')) continue;
+    if (EXCLUDE_PATTERN.test(ent.name)) continue;
+    
     const full = path.join(dir, ent.name);
     if (ent.isDirectory()) await walk(full, out, depth + 1);
     else if (VIDEO_EXT.has(path.extname(ent.name).toLowerCase())) out.push(full);

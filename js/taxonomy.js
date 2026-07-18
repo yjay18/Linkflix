@@ -1,6 +1,7 @@
 /* ================= Library intelligence (genres, categories, tags) ================= */
 import { driveFileId } from './drive.js';
 import { formatShowDates } from './format.js';
+import { state, saveLibrary } from './state.js';
 
 const GENRE_ALIASES = {
   'sci fi': 'Sci-Fi & Fantasy',
@@ -45,23 +46,7 @@ export const CATEGORY_ORDER = [
   'Music & Musicals', 'Sports', 'Limited Series', 'Long-Run Shows'
 ];
 
-const RECOMMENDATION_TAG_RULES = [
-  ['funny', /\b(comedy|comic|funny|sitcom|joke|jokes|laugh|hilarious|humor|humour|satire|parody|witty|absurd|goofy|silly|sketch)\b/i],
-  ['light', /\b(light|comfort|cozy|cosy|feel.?good|easy|warm|charming|wholesome|breezy)\b/i],
-  ['dark', /\b(dark|gritty|bleak|violent|twisted|brooding|antihero|revenge|tragic)\b/i],
-  ['intense', /\b(intense|tense|thriller|suspense|stressful|edge|high.?stakes|survival|danger)\b/i],
-  ['mystery', /\b(mystery|detective|investigation|clue|case|murder|secret|conspiracy|noir)\b/i],
-  ['crime', /\b(crime|criminal|heist|gang|mafia|cartel|police|cop|detective|prison)\b/i],
-  ['sci-fi', /\b(sci.?fi|science fiction|space|alien|future|robot|android|dystopia|time travel|multiverse)\b/i],
-  ['fantasy', /\b(fantasy|magic|dragon|kingdom|myth|supernatural|witch|wizard|prophecy)\b/i],
-  ['romantic', /\b(romance|romantic|love|relationship|dating|crush|wedding|heartbreak|rom-com)\b/i],
-  ['animated', /\b(animation|animated|anime|cartoon)\b/i],
-  ['family', /\b(family|kids|children|teen|school|all ages)\b/i],
-  ['action', /\b(action|adventure|fight|battle|war|mission|spy|superhero|chase|martial)\b/i],
-  ['scary', /\b(horror|scary|haunted|ghost|monster|slasher|zombie|vampire|terror)\b/i],
-  ['short', /\b(short|quick|limited|miniseries|mini-series|special)\b/i],
-  ['binge', /\b(binge|long|long-running|many episodes|season|seasons)\b/i]
-];
+
 
 export function labelCase(raw) {
   const clean = String(raw || '').replace(/\s+/g, ' ').trim();
@@ -94,12 +79,7 @@ export function itemText(item) {
     .filter(Boolean).join(' ');
 }
 
-export function tagsFromText(text) {
-  const tags = new Set();
-  for (const [tag, re] of RECOMMENDATION_TAG_RULES)
-    if (re.test(text)) tags.add(tag);
-  return [...tags];
-}
+
 
 export function itemRecommendationProfile(item) {
   const topText = [item.title, item.genre, item.subtitle, formatShowDates(item), item.type]
@@ -113,13 +93,59 @@ export function itemRecommendationProfile(item) {
     if (eps >= 30) categorySet.add('Long-Run Shows');
   }
   const categories = [...categorySet];
-  const categoryText = categories.join(' ');
   const tags = [...new Set([
-    ...tagsFromText(topText),
-    ...tagsFromText(categoryText),
+    ...(item.ollamaTags || []),
     ...categories.map(c => c.toLowerCase().replace(/&/g, '').replace(/\s+/g, '-'))
   ])];
   return { text: topText, categories, tags };
+}
+
+export async function generateOllamaTags(item) {
+  const prompt = `You are a film and TV expert. Generate an array of exactly 5 descriptive, one-word conceptual tags (like "superhero", "gritty", "heist", "romance") for the following ${item.type}:
+Title: ${item.title}
+Genre: ${item.genre || ''}
+Synopsis: ${item.subtitle || ''}
+
+Respond with only a JSON array of strings. Do not include markdown formatting or explanations.`;
+
+  try {
+    const r = await fetch('/api/concierge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: state.settings.model || 'llama3.2',
+        format: 'json',
+        temperature: 0.2,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    
+    if (!r.ok) return [];
+    
+    const text = await r.text();
+    let fullText = '';
+    for (const line of text.trim().split('\n')) {
+      try { fullText += JSON.parse(line).message.content; } catch {}
+    }
+    
+    const tags = JSON.parse(fullText);
+    if (Array.isArray(tags)) return tags.slice(0, 5).map(t => String(t).toLowerCase());
+  } catch (e) {
+    console.warn('Ollama tagging failed', e);
+  }
+  return [];
+}
+
+export async function startTaggingWorker() {
+  for (const item of state.library) {
+    if (!item.ollamaTags) {
+      const tags = await generateOllamaTags(item);
+      if (tags && tags.length > 0) {
+        item.ollamaTags = tags;
+        saveLibrary();
+      }
+    }
+  }
 }
 
 export function itemCategories(item) {

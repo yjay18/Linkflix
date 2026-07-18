@@ -50,6 +50,14 @@ export function sampleItems(items, limit) {
 }
 
 /* ---- persistence ---- */
+
+/* A Linkflix Air client — a phone/tablet browsing over the LAN rather than the Mac
+   itself. Air clients are viewers: they never write library.json back to disk,
+   because a device holding a stale localStorage copy would clobber the Mac's
+   current library on boot. */
+export const isAirClient =
+  !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
+
 let diskSaveTimer = null;
 let diskSaveWarned = false;
 
@@ -72,6 +80,7 @@ async function saveLibraryToDisk() {
 export function saveLibrary() {
   store.set('library', state.library);
   state.conciergeContext = null;                  // invalidate cached Concierge snapshot
+  if (isAirClient) return;                        // Air viewers never write the Mac's disk
   clearTimeout(diskSaveTimer);
   diskSaveTimer = setTimeout(saveLibraryToDisk, 300);
 }

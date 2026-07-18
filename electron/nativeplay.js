@@ -21,9 +21,16 @@ function resolvePlayer(resourcesDir) {
   ]);
   if (iina) return { kind: 'iina', bin: iina };
 
-  const mpv = firstExisting([
-    '/opt/homebrew/bin/mpv', '/usr/local/bin/mpv', '/usr/bin/mpv'
-  ]);
+  // Resolve system mpv from PATH dynamically
+  let mpv = null;
+  try {
+    const { execSync } = require('child_process');
+    const pathBin = execSync('which mpv', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (pathBin && fs.existsSync(pathBin)) {
+      mpv = pathBin;
+    }
+  } catch { /* not in PATH */ }
+
   if (mpv) return { kind: 'mpv', bin: mpv };
   
   if (fs.existsSync('/Applications/VLC.app')) return { kind: 'vlc' };

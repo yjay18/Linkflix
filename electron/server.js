@@ -73,7 +73,7 @@ async function ollamaConcierge(res, body) {
     upstream = await fetch(`${OLLAMA}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages, stream: true, options: { temperature } }),
+      body: JSON.stringify({ model, messages, stream: true, format: payload.format, options: { temperature } }),
       signal: ac.signal
     });
   } catch (e) {
@@ -238,6 +238,37 @@ function handle(staticRoot, dataRoot, req, res) {
       .catch(err => send(res, 500, JSON.stringify({ error: String(err.message || err) }), { 'Content-Type': 'application/json' }));
     return;
   }
+  if (req.method === 'GET' && pathname === '/api/ip') {
+    const os = require('os');
+    const candidates = [];
+    for (const [name, list] of Object.entries(os.networkInterfaces()))
+      for (const iface of list || [])
+        if (iface.family === 'IPv4' && !iface.internal)
+          candidates.push({ name, address: iface.address });
+    // prefer real LAN (private-range) addresses on en* over VPN/bridge adapters
+    const isPrivate = a => /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(a);
+    candidates.sort((a, b) =>
+      (isPrivate(b.address) - isPrivate(a.address)) ||
+      (/^en/.test(b.name) - /^en/.test(a.name)));
+    const ip = candidates[0]?.address || '127.0.0.1';
+    send(res, 200, JSON.stringify({ ip, port: req.socket.localPort }), { 'Content-Type': 'application/json' });
+    return;
+  }
+  if (req.method === 'GET' && pathname === '/api/qr') {
+    const url = new URL('http://localhost' + req.url);
+    const text = url.searchParams.get('text');
+    if (!text) return send(res, 400, 'no text');
+    try {
+      const qrcode = require('qrcode');
+      qrcode.toString(text, { type: 'svg' }, (err, svg) => {
+        if (err) return send(res, 500, 'error');
+        send(res, 200, svg, { 'Content-Type': 'image/svg+xml' });
+      });
+    } catch (e) {
+      send(res, 500, 'error');
+    }
+    return;
+  }
   if (req.method === 'GET' && pathname === '/api/models') return ollamaModels(res);
   if (req.method === 'POST' && pathname === '/api/concierge') {
     let body = '';
@@ -286,13 +317,13 @@ function startServer(staticRoot, preferredPort = 4174, dataRoot = staticRoot) {
     server.on('error', err => {
       if (err.code === 'EADDRINUSE' && port < maxPort) {
         port += 1;
-        server.listen(port, '127.0.0.1');
+        server.listen(port, '0.0.0.0');
       } else if (!settled) {
         settled = true;
         reject(err);
       }
     });
-    server.listen(port, '127.0.0.1', () => {
+    server.listen(port, '0.0.0.0', () => {
       settled = true;
       resolve({ server, port });
     });

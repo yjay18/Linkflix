@@ -217,13 +217,35 @@ function homeHtml() {
 
   const watchedRow = rowHtml('Watched', items.filter(i => i.watched));
 
+  if (state.searchQuery) {
+    const isSemantic = state.semanticResults && state.semanticResults.length > 0;
+    if (isSemantic) {
+      const exactIds = new Set(items.map(i => i.id));
+      const semanticExtra = state.semanticResults.filter(i => !exactIds.has(i.id));
+      items = [...items, ...semanticExtra];
+    }
+    if (!items.length) {
+      return `<div class="empty glass"><div class="big">⌕</div>
+        <h2>No matches for “${esc(state.searchQuery)}”</h2><p>Try a different search.</p></div>`;
+    }
+    return `<section class="row-section">
+      <div class="row-title">Search Results 
+        ${isSemantic ? '<span class="badge accent" style="margin-left:8px; font-size:11px">✨ AI Semantic Match</span>' : ''}
+      </div>
+      <div class="row-wrap">
+         <div class="row search-grid" style="display: flex; flex-wrap: wrap; gap: 16px; padding: 0 40px 40px 40px;">
+           ${items.map(i => cardHtml(i)).join('')}
+         </div>
+      </div>
+    </section>`;
+  }
+
   const body =
     hero + cw + watchedRow + genreRows +
     rowHtml('Movies', items.filter(i => i.type === 'movie')) +
     rowHtml('TV Shows', items.filter(i => i.type === 'show'));
 
-  return body || `<div class="empty glass"><div class="big">⌕</div>
-    <h2>No matches for “${esc(state.searchQuery)}”</h2><p>Try a different search.</p></div>`;
+  return body;
 }
 
 /* ---------- Detail ---------- */

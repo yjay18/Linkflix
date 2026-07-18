@@ -424,6 +424,17 @@ export function openSettings() {
           <div class="hint">${state.watchLog.length
             ? `This removes ${state.watchLog.length} saved progress entr${state.watchLog.length === 1 ? 'y' : 'ies'} from this browser.`
             : 'There is nothing in Continue Watching right now.'}</div></div>
+        <div class="field"><label>Linkflix Air (Local Network Streaming)</label>
+          <div class="hero-actions" style="align-items: center; gap: 16px;">
+            <div id="air-qr" style="width: 100px; height: 100px; background: #222; border-radius: 8px; display:flex; align-items:center; justify-content:center; overflow: hidden; padding: 4px;">
+              <span class="hint" style="margin:0">Loading...</span>
+            </div>
+            <div>
+              <div id="air-url" style="font-weight: 600; font-family: monospace; font-size: 1.1em; color: var(--accent);">http://...</div>
+              <div class="hint" style="margin-top: 4px;">Scan this code with a phone or tablet on the same Wi-Fi network to browse your library and stream video directly to your device (or AirPlay it to a TV).</div>
+            </div>
+          </div>
+        </div>
         <div class="field"><label>Library folder — share it via Drive</label>
           <div class="hero-actions">
             <button type="button" class="pill-btn" id="btn-folder-reload">⟳ Reload from folder</button>
@@ -535,6 +546,28 @@ export function openSettings() {
         sel.insertAdjacentHTML('afterbegin',
           `<option value="${esc(cur)}" selected>${esc(cur)} — not installed (ollama pull)</option>`);
     } catch { /* Ollama not reachable — keep the single fallback option */ }
+  })();
+
+  // fetch Linkflix Air IP and QR code
+  (async () => {
+    try {
+      const r = await fetch('/api/ip');
+      const d = await r.json();
+      if (d.ip && d.ip !== '127.0.0.1') {
+        const url = `http://${d.ip}:${d.port || 4174}`;
+        $('#air-url').textContent = url;
+        const svgHTML = await fetch(`/api/qr?text=${encodeURIComponent(url)}`).then(r => r.text());
+        $('#air-qr').innerHTML = svgHTML;
+        const svg = $('#air-qr').querySelector('svg');
+        if (svg) { svg.style.width = '100%'; svg.style.height = '100%'; svg.style.display = 'block'; }
+      } else {
+        $('#air-url').textContent = 'Not connected to a local network';
+        $('#air-qr').innerHTML = '<span class="hint">Offline</span>';
+      }
+    } catch {
+       $('#air-url').textContent = 'Server not reachable';
+       $('#air-qr').innerHTML = '<span class="hint">Offline</span>';
+    }
   })();
 
   $('#f-model').focus();

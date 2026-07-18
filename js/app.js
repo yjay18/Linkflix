@@ -14,7 +14,7 @@
      hover      — Netflix-style hover previews (self-wires listeners)
    This file only wires the persistent top-bar / chat controls and boots. */
 
-import { state, saveLibrary } from './state.js';
+import { state, saveLibrary, isAirClient } from './state.js';
 import { $ } from './dom.js';
 import { render, playItem } from './views.js';
 import { openAddModal, openSettings, loadFromFolder, importLibraryFile, closeModal } from './modals.js';
@@ -23,6 +23,8 @@ import {
   sendChat, syncSuggestionScopeUi
 } from './concierge.js';
 import { focusFirst } from './nav.js';
+import { startTaggingWorker } from './taxonomy.js';
+import { startSemanticWorker, rankLibrary } from './semantic.js';
 import './hover.js';               // side-effect: hover-preview listeners
 
 /* ---------- persistent controls ---------- */
@@ -51,12 +53,26 @@ $('#chat-form').addEventListener('submit', e => {
   sendChat(text);
 });
 
+let searchTimer;
 $('#search-input').addEventListener('input', e => {
-  state.searchQuery = e.target.value.trim();
+  const q = e.target.value.trim();
+  state.searchQuery = q;
+  state.semanticResults = null;
   if (state.view.name !== 'home') state.view = { name: 'home' };
+  
   const focused = document.activeElement;
   render();
-  focused.focus();
+  if (focused) focused.focus();
+
+  clearTimeout(searchTimer);
+  if (q.split(' ').length > 1 || q.length > 5) {
+    searchTimer = setTimeout(async () => {
+      state.semanticResults = await rankLibrary(q);
+      const active = document.activeElement;
+      render();
+      if (active) active.focus();
+    }, 400);
+  }
 });
 $('#search-input').addEventListener('keydown', e => {
   if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); focusFirst(); }
@@ -77,5 +93,12 @@ if (cleaned.length !== state.library.length) { state.library = cleaned; saveLibr
 
 syncSuggestionScopeUi();
 render();
-if (!state.library.length) loadFromFolder(true);   // pick up a shared library/ folder if present
+if (isAirClient) loadFromFolder(true);             // Air viewer: the Mac's library is the truth
+else if (!state.library.length) loadFromFolder(true);   // pick up a shared library/ folder if present
 else saveLibrary();                                // recreate/update library/library.json on launch
+
+// Background AI loops (not on Air viewers — phones shouldn't build tags/embeddings)
+if (!isAirClient) setTimeout(() => {
+  startTaggingWorker();
+  startSemanticWorker();
+}, 2000);
