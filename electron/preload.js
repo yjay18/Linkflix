@@ -6,6 +6,6 @@ contextBridge.exposeInMainWorld('linkflix', {
   isElectron: true,
   pickVideoFile: () => ipcRenderer.invoke('pick-video-file'),
   pickFolder: () => ipcRenderer.invoke('pick-folder'),
-  playNative: (path, title) => ipcRenderer.invoke('play-native', { path, title }),
+  playNative: (path, title, playlist) => ipcRenderer.invoke('play-native', { path, title, playlist }),
   openExternalFile: (path) => ipcRenderer.invoke('open-external-file', { path })
 });

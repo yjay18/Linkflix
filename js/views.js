@@ -367,7 +367,13 @@ function playLocalNative(item, s = 0, e = 0) {
   const p = localPathFor(item, s, e);
   rememberWatchPosition(item.id, s, e);
   const label = item.type === 'show' ? `${item.title} — S${s + 1}E${e + 1}` : item.title;
-  window.linkflix.playNative(p, label).then(r => {
+  // Collect remaining episode paths in the season for auto-advance (⏭ in mpv)
+  let playlist = [];
+  if (item.type === 'show') {
+    const eps = item.seasons?.[s]?.episodes || [];
+    playlist = eps.slice(e + 1).map(ep => ep.localPath).filter(Boolean);
+  }
+  window.linkflix.playNative(p, label, playlist).then(r => {
     if (r?.ok) {
       const name = { mpv: 'mpv', iina: 'IINA', vlc: 'VLC', system: 'your player' }[r.player] || 'your player';
       toast(`▶ Playing in ${name}`);

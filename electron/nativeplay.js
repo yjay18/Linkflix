@@ -33,12 +33,25 @@ function launch(bin, args) {
 }
 
 // Play in the best native player. Returns the player kind used.
-function playNative(filePath, resourcesDir, title) {
+// playlist: optional array of additional file paths (e.g. remaining episodes in a season)
+function playNative(filePath, resourcesDir, title, playlist) {
   if (!filePath || !fs.existsSync(filePath)) throw new Error('file not found');
   const player = resolvePlayer(resourcesDir);
   if (player.kind === 'mpv') {
-    launch(player.bin, ['--force-window=yes', '--sub-auto=fuzzy',
-      ...(title ? [`--title=${title}`] : []), filePath]);
+    // Resolve portable_config location.
+    // In the packaged app, it's under resourcesPath/mpv/portable_config.
+    // In dev mode, it's under build/mpv/portable_config.
+    const configDir = firstExisting([
+      resourcesDir && path.join(resourcesDir, 'mpv', 'portable_config'),
+      path.join(__dirname, '..', 'build', 'mpv', 'portable_config')
+    ]);
+    const args = [
+      ...(configDir ? [`--config-dir=${configDir}`] : ['--force-window=yes', '--sub-auto=fuzzy']),
+      ...(title ? [`--title=${title}`] : []),
+      filePath,
+      ...(Array.isArray(playlist) ? playlist : [])  // remaining episodes for ⏭
+    ];
+    launch(player.bin, args);
   } else if (player.kind === 'iina') {
     launch(player.bin, [filePath]);
   } else if (player.kind === 'vlc') {

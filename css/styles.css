@@ -218,7 +218,7 @@ main { padding: 118px 40px 90px; max-width: 1320px; margin: 0 auto; outline: non
   color: var(--text); font: inherit; text-align: left; padding: 0;
   transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.card:hover { transform: translateY(-6px) scale(1.035); transition-delay: 0.3s; }
+.card.card-hovered { transform: translateY(-6px) scale(1.035); }
 .card:focus-visible { outline: none; transform: translateY(-7px) scale(1.045); }
 .card:focus-visible .cover {
   border-color: rgba(255, 255, 255, 0.95);
@@ -251,9 +251,9 @@ main { padding: 118px 40px 90px; max-width: 1320px; margin: 0 auto; outline: non
 .card-sub { color: var(--text-dim); font-size: 0.8rem; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; }
 /* titles expand to full text on hover / keyboard focus */
-.card:hover .card-title, .card:focus-visible .card-title {
+.card.card-hovered .card-title, .card:focus-visible .card-title {
   white-space: normal; overflow: visible; color: var(--text); }
-.card:hover .card-sub, .card:focus-visible .card-sub {
+.card.card-hovered .card-sub, .card:focus-visible .card-sub {
   white-space: normal; overflow: visible; }
 
 /* ---------- Empty state ---------- */
