@@ -50,8 +50,8 @@ ipcMain.handle('pick-folder', async () => {
 });
 
 // Native playback of a local file (mpv / IINA / VLC / system), plays MKV/AVI/anything.
-ipcMain.handle('play-native', (_e, { path: fp, title, playlist } = {}) => {
-  try { return { ok: true, player: nativeplay.playNative(fp, process.resourcesPath, title, playlist) }; }
+ipcMain.handle('play-native', (_e, { path: fp, title, playlist, pip } = {}) => {
+  try { return { ok: true, player: nativeplay.playNative(fp, process.resourcesPath, title, playlist, pip) }; }
   catch (err) { return { ok: false, error: String(err.message || err) }; }
 });
 // Option 3: open in the user's default app for that file.

@@ -403,7 +403,9 @@ export function openSettings() {
             with a Brave key, it can add search context.</div></div>
         <div class="field"><label>Behaviour</label>
           <label class="check-row"><input type="checkbox" id="f-group"
-            ${state.settings.groupByGenre ? 'checked' : ''}> Group home rows by genre automatically</label></div>
+            ${state.settings.groupByGenre ? 'checked' : ''}> Group home rows by genre automatically</label>
+          <label class="check-row"><input type="checkbox" id="f-always-pip"
+            ${state.settings.alwaysPip ? 'checked' : ''}> Always play local videos in Picture-in-Picture mode</label></div>
         <div class="field"><label>Local media — auto-classify your files</label>
           <div class="hero-actions">
             <button type="button" class="pill-btn accent" id="btn-scan">⟳ Scan media folders</button>
@@ -450,6 +452,7 @@ export function openSettings() {
       allowOutsideSuggestions: $('#f-outside').checked,
       useBraveSearch: wantsBrave && Boolean(braveKey),
       groundToLibrary: true,
+      alwaysPip: $('#f-always-pip').checked,
       groupByGenre: $('#f-group').checked };
     saveSettings();
     syncSuggestionScopeUi();

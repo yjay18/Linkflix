@@ -22,6 +22,7 @@ export const state = {
       useBraveSearch: false,
       groupByGenre: true,
       groundToLibrary: true,
+      alwaysPip: false,
       mediaRoots: []
     },
     store.get('settings', {})),

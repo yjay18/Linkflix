@@ -358,9 +358,15 @@ function episodePlayable(item, s, e) {
   return !!(ep && (ep.localPath || driveFileId(ep.link)));
 }
 
-// A local file in the desktop app plays natively (mpv/IINA) — handles MKV/AVI/anything.
+// A local file in the desktop app plays natively (IINA) only if it's a format
+// Chromium doesn't support well (like MKV or AVI). Otherwise, we use the web player
+// which natively supports macOS PiP.
 function useNativePlayer(item, s = 0, e = 0) {
-  return !!(localPathFor(item, s, e) && window.linkflix?.playNative);
+  const p = localPathFor(item, s, e);
+  if (!p || !window.linkflix?.playNative) return false;
+  const ext = p.split('.').pop().toLowerCase();
+  const webFormats = ['mp4', 'webm', 'ogg', 'mov', 'm4v'];
+  return !webFormats.includes(ext);
 }
 
 function playLocalNative(item, s = 0, e = 0) {
@@ -373,7 +379,7 @@ function playLocalNative(item, s = 0, e = 0) {
     const eps = item.seasons?.[s]?.episodes || [];
     playlist = eps.slice(e + 1).map(ep => ep.localPath).filter(Boolean);
   }
-  window.linkflix.playNative(p, label, playlist).then(r => {
+  window.linkflix.playNative(p, label, playlist, Boolean(state.settings.alwaysPip)).then(r => {
     if (r?.ok) {
       const name = { mpv: 'mpv', iina: 'IINA', vlc: 'VLC', system: 'your player' }[r.player] || 'your player';
       toast(`▶ Playing in ${name}`);
