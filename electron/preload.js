@@ -5,5 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('linkflix', {
   isElectron: true,
   pickVideoFile: () => ipcRenderer.invoke('pick-video-file'),
-  pickFolder: () => ipcRenderer.invoke('pick-folder')
+  pickFolder: () => ipcRenderer.invoke('pick-folder'),
+  playNative: (path, title) => ipcRenderer.invoke('play-native', { path, title }),
+  openExternalFile: (path) => ipcRenderer.invoke('open-external-file', { path })
 });

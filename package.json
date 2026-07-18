@@ -23,6 +23,7 @@
     "asar": false,
     "directories": { "output": "dist", "buildResources": "build" },
     "files": ["index.html", "css/**/*", "js/**/*", "electron/**/*"],
+    "extraResources": [{ "from": "build/mpv", "to": "mpv" }],
     "mac": {
       "target": ["dir"],
       "category": "public.app-category.entertainment",

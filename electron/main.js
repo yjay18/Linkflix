@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { startServer } = require('./server');
 const media = require('./media');
+const nativeplay = require('./nativeplay');
 
 const STATIC_ROOT = path.join(__dirname, '..');   // app code: index.html, css/, js/
 // Writable data (library.json, watch.json, Media/). In the packaged app the bundle is
@@ -46,6 +47,17 @@ ipcMain.handle('pick-folder', async () => {
     properties: ['openDirectory']
   });
   return r.canceled ? null : r.filePaths[0];
+});
+
+// Native playback of a local file (mpv / IINA / VLC / system), plays MKV/AVI/anything.
+ipcMain.handle('play-native', (_e, { path: fp, title } = {}) => {
+  try { return { ok: true, player: nativeplay.playNative(fp, process.resourcesPath, title) }; }
+  catch (err) { return { ok: false, error: String(err.message || err) }; }
+});
+// Option 3: open in the user's default app for that file.
+ipcMain.handle('open-external-file', (_e, { path: fp } = {}) => {
+  try { nativeplay.openExternal(fp); return { ok: true }; }
+  catch (err) { return { ok: false, error: String(err.message || err) }; }
 });
 
 let mainWindow = null;

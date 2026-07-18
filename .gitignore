@@ -19,3 +19,6 @@ out/
 .DS_Store
 Thumbs.db
 Media/
+
+# bundled mpv (regenerate with scripts/bundle-mpv.sh)
+build/mpv/

@@ -254,6 +254,8 @@ function detailHtml(id) {
       <div class="hero-actions" data-navrow>
         ${item.type === 'movie'
           ? `<button class="pill-btn accent focusable" data-play="${item.id}">▶ Play</button>` : ''}
+        ${item.type === 'movie' && item.localPath && window.linkflix?.openExternalFile
+          ? `<button class="pill-btn focusable" data-open-external="${item.id}">⧉ Open in default player</button>` : ''}
         ${inContinueWatching
           ? `<button class="pill-btn focusable" data-clear-watch="${item.id}">Remove from Continue Watching</button>` : ''}
         <button class="pill-btn focusable" data-edit="${item.id}">✎ Edit</button>
@@ -356,6 +358,26 @@ function episodePlayable(item, s, e) {
   return !!(ep && (ep.localPath || driveFileId(ep.link)));
 }
 
+// A local file in the desktop app plays natively (mpv/IINA) — handles MKV/AVI/anything.
+function useNativePlayer(item, s = 0, e = 0) {
+  return !!(localPathFor(item, s, e) && window.linkflix?.playNative);
+}
+
+function playLocalNative(item, s = 0, e = 0) {
+  const p = localPathFor(item, s, e);
+  rememberWatchPosition(item.id, s, e);
+  const label = item.type === 'show' ? `${item.title} — S${s + 1}E${e + 1}` : item.title;
+  window.linkflix.playNative(p, label).then(r => {
+    if (r?.ok) {
+      const name = { mpv: 'mpv', iina: 'IINA', vlc: 'VLC', system: 'your player' }[r.player] || 'your player';
+      toast(`▶ Playing in ${name}`);
+    } else {                                   // fall back to the in-app HLS player
+      toast('Native player unavailable — playing in-app');
+      state.view = { name: 'player', id: item.id, s, e }; render();
+    }
+  }).catch(() => { state.view = { name: 'player', id: item.id, s, e }; render(); });
+}
+
 export function playEpisode(id, s = 0, e = 0) {
   const item = state.library.find(i => i.id === id);
   if (!item || item.type !== 'show') return false;
@@ -363,6 +385,7 @@ export function playEpisode(id, s = 0, e = 0) {
     toast('That episode needs a Drive link or local file first.');
     return false;
   }
+  if (useNativePlayer(item, s, e)) { playLocalNative(item, s, e); return true; }
   state.view = { name: 'player', id, s, e };   // playerHtml logs Continue Watching
   render();
   return true;
@@ -378,6 +401,7 @@ export function playItem(id) {                 // resume where you left off, els
     playEpisode(id, canResume ? log.s : fallback.s, canResume ? log.e : fallback.e);
     return;
   }
+  if (useNativePlayer(item, 0, 0)) { playLocalNative(item, 0, 0); return; }
   state.view = { name: 'player', id, s: 0, e: 0 };
   render();
 }
@@ -405,9 +429,20 @@ function bindView() {
         playEpisode(item.id, +(play.dataset.s ?? 0), +(play.dataset.e ?? 0));
         return;
       }
+      if (useNativePlayer(item, 0, 0)) { playLocalNative(item, 0, 0); return; }
       state.view = { name: 'player', id: play.dataset.play,
         s: +(play.dataset.s ?? 0), e: +(play.dataset.e ?? 0) };
       render(); return;
+    }
+    const openExt = e.target.closest('[data-open-external]');
+    if (openExt) {
+      const item = state.library.find(i => i.id === openExt.dataset.openExternal);
+      const p = localPathFor(item, 0, 0);
+      if (p && window.linkflix?.openExternalFile) {
+        window.linkflix.openExternalFile(p);
+        toast('Opening in your default player…');
+      }
+      return;
     }
     const featured = e.target.closest('[data-play-featured]');
     if (featured) { playItem(featured.dataset.playFeatured); return; }
