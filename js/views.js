@@ -9,6 +9,8 @@ import { hidePop } from './hover.js';
 import { focusFirst } from './nav.js';
 import { openAddModal, loadFromFolder, importLibraryFile } from './modals.js';
 import { initLocalPlayer, destroyLocalPlayer } from './player.js';
+import { openMoreMenu } from './subtitles.js';
+import { hasPreview, previewUrl } from './previews.js';
 
 function localPathFor(item, s = 0, e = 0) {
   if (!item) return '';
@@ -119,7 +121,7 @@ function heroHtml(item) {
       <h1>${esc(item.title)}</h1>
       <p class="hero-sub">${esc(item.subtitle || 'From your personal collection.')}</p>
       <div class="hero-actions" data-navrow>
-        <button class="pill-btn accent focusable" data-play-featured="${item.id}">▶ ${resume ? 'Resume' : 'Play'}</button>
+        <button class="pill-btn accent focusable" data-play-featured="${item.id}">${resume ? 'Resume' : 'Play'}</button>
         <button class="pill-btn focusable" data-open="${item.id}">Details</button>
       </div>
     </div>
@@ -185,9 +187,9 @@ function homeHtml() {
       <p>Your personal cinema. Add a movie or show with a Drive link —
          or load a shared library.</p>
       <div class="hero-actions" data-navrow>
-        <button class="pill-btn accent focusable" data-action="add">＋ Add your first title <kbd>A</kbd></button>
-        <button class="pill-btn focusable" data-action="scan">⟳ Scan library folder</button>
-        <button class="pill-btn focusable" data-action="import">⇧ Import JSON</button>
+        <button class="pill-btn accent focusable" data-action="add">Add your first title <kbd>A</kbd></button>
+        <button class="pill-btn focusable" data-action="scan">Scan library folder</button>
+        <button class="pill-btn focusable" data-action="import">Import JSON</button>
       </div>
     </div>`;
   }
@@ -255,9 +257,15 @@ function detailHtml(id) {
   const dates = formatShowDates(item);
   const inContinueWatching = state.watchLog.some(w => w.itemId === item.id);
 
-  const head = `<section class="hero glass">
+  const topBar = `<div class="detail-top-bar">
+    <button class="detail-back focusable" data-action="back" title="Back" aria-label="Back">Back <kbd>⎋</kbd></button>
+  </div>`;
+
+  const head = `${topBar}<section class="hero glass">
+    ${hasPreview(item.id) ? `<video class="hero-video-bg" src="${previewUrl(item.id)}" autoplay loop playsinline oncanplay="this.classList.add('on'); this.nextElementSibling.classList.add('off')"></video>` : ''}
     <div class="hero-backdrop" style="background:${coverSrc(item)
       ? `url('${esc(coverSrc(item))}') center/cover` : gradientFor(item.title)}"></div>
+    ${hasPreview(item.id) ? `<div class="hero-video-overlay"></div>` : ''}
     <button class="hero-mark ${item.watched ? 'on' : ''} focusable" data-toggle-watched="${item.id}"
       title="${item.watched ? 'Watched — click to unmark' : 'Mark as watched'}"
       aria-label="${item.watched ? 'Watched — click to unmark' : 'Mark as watched'}">
@@ -269,20 +277,19 @@ function detailHtml(id) {
         <span class="badge">${item.type === 'show' ? 'Series' : 'Film'}</span>
         ${item.genre ? `<span class="badge">${esc(item.genre)}</span>` : ''}
         ${dates ? `<span class="badge">${esc(dates)}</span>` : ''}
-        ${item.watched ? '<span class="badge watched">✓ Watched</span>' : ''}
+        ${item.watched ? '<span class="badge watched">Watched</span>' : ''}
       </div>
       <h1>${esc(item.title)}</h1>
       <p class="hero-sub">${esc(item.subtitle || '')}</p>
       <div class="hero-actions" data-navrow>
         ${item.type === 'movie'
-          ? `<button class="pill-btn accent focusable" data-play="${item.id}">▶ Play</button>` : ''}
+          ? `<button class="pill-btn accent focusable" data-play="${item.id}">Play</button>` : ''}
         ${item.type === 'movie' && item.localPath && window.linkflix?.openExternalFile
-          ? `<button class="pill-btn focusable" data-open-external="${item.id}">⧉ Open in default player</button>` : ''}
+          ? `<button class="pill-btn focusable" data-open-external="${item.id}">Open in default player</button>` : ''}
         ${inContinueWatching
           ? `<button class="pill-btn focusable" data-clear-watch="${item.id}">Remove from Continue Watching</button>` : ''}
-        <button class="pill-btn focusable" data-edit="${item.id}">✎ Edit</button>
-        <button class="pill-btn danger focusable" data-delete="${item.id}">🗑 Delete</button>
-        <button class="pill-btn focusable" data-action="back">← Back <kbd>⎋</kbd></button>
+        <button class="pill-btn focusable" data-more="${item.id}" title="More actions"
+          aria-label="More actions">⋯</button>
       </div>
     </div>
   </section>`;
@@ -290,7 +297,14 @@ function detailHtml(id) {
   let body = '';
   if (item.type === 'show') {
     const seasons = item.seasons || [];
-    const selectedSeason = Math.min(Math.max(+(state.view.season ?? 0), 0), Math.max(0, seasons.length - 1));
+    let defaultSeason = 0;
+    if (state.view.season === undefined) {
+      const lastWatched = state.watchLog.find(w => w.itemId === item.id);
+      if (lastWatched) defaultSeason = lastWatched.s;
+    } else {
+      defaultSeason = state.view.season;
+    }
+    const selectedSeason = Math.min(Math.max(+defaultSeason, 0), Math.max(0, seasons.length - 1));
     const season = seasons[selectedSeason];
     body = `<div class="detail-body">
       ${seasons.length > 1 ? `<div class="season-picker glass">
@@ -311,7 +325,7 @@ function detailHtml(id) {
                 <div class="ep-title">${esc(ep.title || `Episode ${ei + 1}`)}</div>
                 ${episodeMeta(ep) ? `<div class="ep-sub">${esc(episodeMeta(ep))}</div>` : ''}
               </span>
-              <span class="ep-play">▶</span>
+              <span class="ep-play"></span>
             </button>`).join('')}
         </div>
       </div>
@@ -337,7 +351,7 @@ function playerHtml({ id, s, e }) {
   store.set('watchLog', state.watchLog);
 
   const top = `<div class="player-top glass">
-      <button class="pill-btn small focusable" data-action="back">← Back <kbd>⎋</kbd></button>
+      <button class="pill-btn small focusable" data-action="back">Back <kbd>⎋</kbd></button>
       <span class="pt-title">${esc(item.title)}</span>
       <span class="pt-sub">${esc(sub)}</span>
     </div>`;
@@ -356,7 +370,7 @@ function playerHtml({ id, s, e }) {
     ${top}
     ${valid
       ? `<iframe src="${esc(src)}" allow="autoplay; fullscreen" allowfullscreen></iframe>`
-      : `<div class="empty" style="margin:auto"><div class="big">⚠️</div>
+      : `<div class="empty" style="margin:auto"><div class="big"></div>
           <h2>Nothing to play yet</h2>
           <p>Add a Drive link or a local file for this title.</p></div>`}
   </div>`;
@@ -404,7 +418,7 @@ function playLocalNative(item, s = 0, e = 0) {
   window.linkflix.playNative(p, label, playlist, Boolean(state.settings.alwaysPip)).then(r => {
     if (r?.ok) {
       const name = { mpv: 'mpv', iina: 'IINA', vlc: 'VLC', system: 'your player' }[r.player] || 'your player';
-      toast(`▶ Playing in ${name}`);
+      toast(`Playing in ${name}`);
     } else {                                   // fall back to the in-app HLS player
       toast('Native player unavailable — playing in-app');
       state.view = { name: 'player', id: item.id, s, e }; render();
@@ -501,6 +515,11 @@ function bindView() {
         render();
         toast(item.watched ? `Marked “${item.title}” as watched ✓` : `Removed “${item.title}” from watched`);
       }
+      return;
+    }
+    const more = e.target.closest('[data-more]');
+    if (more) {
+      openMoreMenu(more, state.library.find(i => i.id === more.dataset.more));
       return;
     }
     const edit = e.target.closest('[data-edit]');

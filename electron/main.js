@@ -3,6 +3,7 @@
    External http(s) links (Google Drive) open in the user's default browser. */
 
 const { app, BrowserWindow, shell, Menu, ipcMain, dialog } = require('electron');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { startServer } = require('./server');
@@ -122,7 +123,27 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+let ollamaProcess = null;
+
+const bundledOllamaPath = app.isPackaged 
+  ? path.join(process.resourcesPath, 'models', 'bin', 'ollama-mac', 'ollama')
+  : path.join(__dirname, '..', 'models', 'bin', 'ollama-mac', 'ollama');
+
 app.whenReady().then(() => {
+  let ollamaBin = 'ollama';
+  if (fs.existsSync(bundledOllamaPath)) {
+    ollamaBin = bundledOllamaPath;
+  }
+  
+  ollamaProcess = spawn(ollamaBin, ['serve'], { stdio: 'ignore' });
+  ollamaProcess.on('error', (err) => {
+    if (ollamaBin === 'ollama' && fs.existsSync(bundledOllamaPath)) {
+      ollamaProcess = spawn(bundledOllamaPath, ['serve'], { stdio: 'ignore' });
+      ollamaProcess.on('error', () => {});
+    }
+  });
+  
   prepareDataDir();
   resolveFfmpeg();
   buildMenu();
@@ -132,7 +153,10 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('before-quit', () => { try { media.killAllSessions(); } catch { /* nothing to clean */ } });
+app.on('before-quit', () => { 
+  if (ollamaProcess) { try { ollamaProcess.kill(); } catch {} }
+  try { media.killAllSessions(); } catch { /* nothing to clean */ } 
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

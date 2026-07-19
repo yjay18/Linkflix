@@ -7,7 +7,7 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "predist": "./scripts/bundle-model.sh",
+    "predist": "./scripts/bundle-model.sh && ./scripts/bundle-ollama.sh",
     "dist": "electron-builder --mac"
   },
   "devDependencies": {

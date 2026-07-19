@@ -132,6 +132,11 @@ function continueSummary() {
   return parts.length ? parts.join('; ') : 'nothing in progress';
 }
 
+function watchedSummary() {
+  const parts = state.library.filter(i => i.watched).map(i => i.title);
+  return parts.length ? parts.join('; ') : 'none';
+}
+
 function librarySummary() {
   if (!state.library.length) return 'The library is currently empty.';
   return state.library.map((i, n) => {
@@ -146,7 +151,8 @@ function librarySummary() {
       tags && `tags: ${tags}`,
       formatShowDates(i) && `dates: ${formatShowDates(i)}`,
       i.subtitle && `about: ${i.subtitle}`,
-      isPlayable(i) ? 'playable: yes' : 'playable: missing Drive link'
+      isPlayable(i) ? 'playable: yes' : 'playable: missing Drive link',
+      i.watched && 'watched: yes'
     ]
       .filter(Boolean).join('; ');
     return `${n + 1}. "${i.title}" — ${kind}${meta ? ` (${meta})` : ''}`;
@@ -157,6 +163,7 @@ function buildConciergeContext() {
   state.conciergeContext = {
     library: librarySummary(),
     continueWatching: continueSummary(),
+    watched: watchedSummary(),
     ts: Date.now()
   };
   return state.conciergeContext;
@@ -248,6 +255,7 @@ The user's library — the titles they can play right here in the app:
 ${context.library}
 
 Continuing / partway through: ${context.continueWatching}
+Already watched: ${context.watched}
 
 A few things that make you more useful (not rigid rules):
 - When you mention a title that's in the library above, write it EXACTLY as listed — the

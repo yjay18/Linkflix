@@ -53,13 +53,14 @@ async function buildPreview(dataRoot, id, file) {
 
     const inputs = [];
     for (const t of ts) inputs.push('-ss', t.toFixed(2), '-t', String(SEG_SECONDS), '-i', file);
-    const filter = ts.map((_, i) => `[${i}:v]`).join('') +
-      `concat=n=${SEGMENTS}:v=1:a=0,scale=${WIDTH}:-2,fps=24[v]`;
+    const filter = ts.map((_, i) => `[${i}:v][${i}:a]`).join('') +
+      `concat=n=${SEGMENTS}:v=1:a=1[v][a];[v]scale=${WIDTH}:-2,fps=24[vout]`;
 
     await fsp.mkdir(path.dirname(out), { recursive: true });
     const tmp = out + '.tmp.mp4';
     const argsFor = codec => ['-hide_banner', '-loglevel', 'error', ...inputs,
-      '-filter_complex', filter, '-map', '[v]', '-an', ...codec,
+      '-filter_complex', filter, '-map', '[vout]', '-map', '[a]', ...codec,
+      '-c:a', 'aac', '-b:a', '96k',
       '-movflags', '+faststart', '-y', tmp];
     try {
       await run(FFMPEG, argsFor(['-c:v', 'h264_videotoolbox', '-b:v', '400k']));

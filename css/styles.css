@@ -125,7 +125,9 @@ main { padding: 118px 40px 90px; max-width: 1320px; margin: 0 auto; outline: non
 @keyframes heroIn { from { opacity: 0; } }
 .hero-backdrop { position: absolute; inset: 0; z-index: -1;
   background-size: cover; background-position: center 25%;
-  filter: blur(4px) brightness(0.55) saturate(1.2); transform: scale(1.06); }
+  filter: blur(4px) brightness(0.55) saturate(1.2); transform: scale(1.06);
+  transition: opacity 1.2s ease; }
+.hero-backdrop.off { opacity: 0; }
 .hero-side, .hero-refresh, .hero-mark {
   position: absolute; z-index: 4; display: grid; place-items: center;
   color: var(--text); font: inherit; cursor: pointer; padding: 0;
@@ -177,6 +179,22 @@ main { padding: 118px 40px 90px; max-width: 1320px; margin: 0 auto; outline: non
   box-shadow: 0 0 0 1px rgba(46, 204, 113, 0.5), 0 8px 24px rgba(46, 204, 113, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.25); }
 .hero-mark.on:hover { transform: scale(1.08); background: linear-gradient(135deg, #34d67e, #17924d); }
+.detail-top-bar { position: absolute; top: 16px; left: 16px; z-index: 20; display: flex; }
+.detail-back { display: flex; align-items: center; gap: 8px; padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.085); border: 1px solid var(--stroke);
+  border-radius: 20px; color: var(--text); font-size: 0.9rem; font-weight: 500;
+  cursor: pointer; transition: all 0.2s ease; }
+.detail-back:hover { background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.36); transform: translateX(-2px); }
+.detail-back:focus-visible { outline: none; border-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 3px rgba(139, 123, 255, 0.4), var(--shadow); }
+.hero-video-bg { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%;
+  object-fit: cover; opacity: 0; transition: opacity 1.2s ease; pointer-events: none; }
+.hero-video-bg.on { opacity: 1.0; }
+.hero-video-overlay { position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(75deg, rgba(15, 15, 15, 0.94) 22%, rgba(15, 15, 15, 0.28) 72%, rgba(15, 15, 15, 0.7) 100%);
+  opacity: 0; transition: opacity 1.2s ease; pointer-events: none; }
+.hero-video-bg.on ~ .hero-video-overlay { opacity: 1.0; }
 .hero-cover { width: 190px; flex-shrink: 0;
   transition: transform 0.28s ease, box-shadow 0.28s ease; }
 .hero-cover:hover { transform: scale(1.06); z-index: 3; }
@@ -521,6 +539,20 @@ main { padding: 118px 40px 90px; max-width: 1320px; margin: 0 auto; outline: non
   border-radius: 8px; padding: 5px 9px; outline: none; }
 .scan-title-edit:focus { border-color: var(--stroke-bright);
   box-shadow: 0 0 0 3px rgba(139, 123, 255, 0.28); }
+
+/* ---------- ⋯ more-menu + subtitle rows ---------- */
+.more-menu { position: fixed; z-index: 95; min-width: 230px; padding: 6px;
+  border-radius: 16px; animation: popFade 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+.more-menu button { display: flex; align-items: center; gap: 10px; width: 100%;
+  font: inherit; font-size: 0.92rem; color: var(--text); text-align: left;
+  background: none; border: none; border-radius: 11px; padding: 10px 12px;
+  cursor: pointer; transition: background 0.18s ease; }
+.more-menu button:hover { background: rgba(139, 123, 255, 0.22); }
+
+.sub-done { color: #7ef0ab; font-weight: 600; font-size: 0.88rem; white-space: nowrap; }
+.sub-progress { color: var(--accent-2); font-size: 0.85rem; white-space: nowrap; }
+.sub-error { color: #ff8a90; font-size: 0.82rem; max-width: 220px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- Toast ---------- */
 .toast { position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);

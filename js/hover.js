@@ -43,14 +43,14 @@ function showPop(card) {
       ${src ? `<img src="${esc(src)}" alt="" onerror="this.remove()">` : ''}
       <div class="cover-fallback">${esc((item.title || '?')[0].toUpperCase())}</div>
       ${hasPreview(id) ? `<video class="pop-teaser" src="${previewUrl(id)}"
-        autoplay muted loop playsinline
+        autoplay loop muted playsinline
         onerror="this.remove()" oncanplay="this.classList.add('on')"></video>` : ''}
     </div>
     <div class="pop-body">
       <div class="pop-title">${esc(item.title)}</div>
       ${item.subtitle ? `<div class="pop-sub">${esc(item.subtitle)}</div>` : ''}
       <div class="pop-actions">
-        <button class="pill-btn accent small" data-pop-play>▶ ${resume ? 'Resume' : 'Play'}</button>
+        <button class="pill-btn accent small" data-pop-play>${resume ? 'Resume' : 'Play'}</button>
         <button class="pill-btn small" data-pop-details>Details</button>
       </div>
       ${popEpisodeList(item)}

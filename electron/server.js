@@ -10,6 +10,7 @@ const path = require('path');
 const media = require('./media');
 const scanner = require('./scanner');
 const previews = require('./previews');
+const subtitles = require('./subtitles');
 
 const MEDIA_MIME = {
   '.m3u8': 'application/vnd.apple.mpegurl',
@@ -218,7 +219,10 @@ async function handleMedia(rootDir, res, pathname) {
     const [, id, s, e] = m;
     const file = await resolveLocalPath(rootDir, id, +s, +e);
     if (!file) { send(res, 404, JSON.stringify({ ok: false, error: 'no local file' }), { 'Content-Type': 'application/json' }); return true; }
-    send(res, 200, JSON.stringify(await media.probe(file)), { 'Content-Type': 'application/json' });
+    const info = await media.probe(file);
+    if (info && info.ok && subtitles.sidecarFor(file))     // generated/downloaded sidecar subs
+      (info.subs = info.subs || []).push({ index: -1, lang: 'External subtitles', codec: 'sidecar' });
+    send(res, 200, JSON.stringify(info), { 'Content-Type': 'application/json' });
     return true;
   }
   m = pathname.match(/^\/hls\/([^/]+)\/(\d+)\/(\d+)\/([\w.]+)$/);
@@ -234,12 +238,15 @@ async function handleMedia(rootDir, res, pathname) {
     serveSessionFile(sess, name, res);
     return true;
   }
-  m = pathname.match(/^\/subs\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\.vtt$/);
+  m = pathname.match(/^\/subs\/([^/]+)\/(\d+)\/(\d+)\/(-?\d+)\.vtt$/);
   if (m) {
     const [, id, s, e, idx] = m;
     const file = await resolveLocalPath(rootDir, id, +s, +e);
     if (!file) { send(res, 404, 'no local file'); return true; }
-    const vtt = await media.subtitleVtt(`${id}/${s}/${e}`, file, +idx);
+    const vtt = +idx < 0
+      ? await subtitles.sidecarVtt(file)                   // generated/external sidecar
+      : await media.subtitleVtt(`${id}/${s}/${e}`, file, +idx);
+    if (!vtt) { send(res, 404, 'no sidecar'); return true; }
     const buf = await fsp.readFile(vtt);
     res.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': 'text/vtt; charset=utf-8', 'Content-Length': buf.length });
     res.end(buf);
@@ -256,6 +263,64 @@ function handle(staticRoot, dataRoot, req, res) {
       .then(done => { if (!done) send(res, 404, 'Not found'); })
       .catch(err => send(res, 500, JSON.stringify({ error: String(err.message || err) }), { 'Content-Type': 'application/json' }));
     return;
+  }
+  // ---- AI subtitle generation (offline Whisper) ----
+  if (req.method === 'POST' && pathname === '/api/subtitles/generate') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 64 * 1024) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const { id, s = 0, e = 0 } = JSON.parse(body || '{}');
+        if (!id) throw new Error('no id');
+        const file = await resolveLocalPath(dataRoot, id, +s, +e);
+        if (!file) return send(res, 404, JSON.stringify({ ok: false, error: 'no local file' }),
+          { 'Content-Type': 'application/json' });
+        const job = subtitles.generate(dataRoot, process.resourcesPath, `${id}/${s}/${e}`, file);
+        send(res, 200, JSON.stringify({ ok: true, job: { state: job.state, pct: job.pct } }),
+          { 'Content-Type': 'application/json' });
+      } catch (err) {
+        send(res, 500, JSON.stringify({ ok: false, error: String(err.message || err) }),
+          { 'Content-Type': 'application/json' });
+      }
+    });
+    return;
+  }
+  if (req.method === 'GET') {
+    const sm = pathname.match(/^\/api\/subtitles\/status\/([^/]+)\/(\d+)\/(\d+)$/);
+    if (sm) {
+      const j = subtitles.status(`${sm[1]}/${sm[2]}/${sm[3]}`);
+      send(res, 200, JSON.stringify(j), { 'Content-Type': 'application/json' });
+      return;
+    }
+    const lm = pathname.match(/^\/api\/subtitles\/list\/([^/]+)$/);
+    if (lm) {
+      (async () => {
+        let lib;
+        try {
+          lib = JSON.parse(await fsp.readFile(path.join(dataRoot, 'library', 'library.json'), 'utf8')).library || [];
+        } catch { lib = []; }
+        const item = lib.find(i => i.id === lm[1]);
+        if (!item) return send(res, 404, JSON.stringify({ ok: false }), { 'Content-Type': 'application/json' });
+        const rows = [];
+        if (item.type === 'movie') {
+          if (item.localPath) rows.push({ s: 0, e: 0, title: item.title,
+            hasSubs: !!subtitles.sidecarFor(item.localPath),
+            job: subtitles.status(`${item.id}/0/0`).state });
+        } else {
+          (item.seasons || []).forEach((se, si) => (se.episodes || []).forEach((ep, ei) => {
+            if (ep.localPath) rows.push({ s: si, e: ei,
+              title: `S${si + 1} E${ei + 1} — ${ep.title || 'Episode ' + (ei + 1)}`,
+              hasSubs: !!subtitles.sidecarFor(ep.localPath),
+              job: subtitles.status(`${item.id}/${si}/${ei}`).state });
+          }));
+        }
+        send(res, 200, JSON.stringify({ ok: true, rows,
+          whisper: !!subtitles.resolveWhisper(process.resourcesPath) }),
+          { 'Content-Type': 'application/json' });
+      })().catch(err => send(res, 500, JSON.stringify({ ok: false, error: String(err.message || err) }),
+        { 'Content-Type': 'application/json' }));
+      return;
+    }
   }
   // hover teaser clips: serve cached preview / build one on request
   if (req.method === 'GET' || req.method === 'HEAD') {
