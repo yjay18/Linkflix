@@ -9,6 +9,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const media = require('./media');
 const scanner = require('./scanner');
+const previews = require('./previews');
 
 const MEDIA_MIME = {
   '.m3u8': 'application/vnd.apple.mpegurl',
@@ -161,6 +162,24 @@ async function handleScan(rootDir, res, body) {
   send(res, 200, JSON.stringify({ ok: true, roots: uniq, ...result }), { 'Content-Type': 'application/json' });
 }
 
+/* First local file for an item: the movie's own file, else the first episode
+   that has one (context.md: teasers use the first episode of a series). */
+async function firstLocalFile(rootDir, id) {
+  let lib;
+  try {
+    lib = JSON.parse(await fsp.readFile(path.join(rootDir, 'library', 'library.json'), 'utf8')).library || [];
+  } catch { return null; }
+  const item = lib.find(i => i.id === id);
+  if (!item) return null;
+  const candidates = [item.localPath,
+    ...(item.seasons || []).flatMap(s => (s.episodes || []).map(ep => ep.localPath))];
+  for (const p of candidates) {
+    if (!p) continue;
+    try { if (fs.statSync(p).isFile()) return p; } catch { /* moved/unmounted */ }
+  }
+  return null;
+}
+
 /* Resolve a playable local path from the SAVED library (never from the URL) —
    the path comes from library.json, which the user populated via the picker/scanner. */
 async function resolveLocalPath(rootDir, id, s, e) {
@@ -236,6 +255,40 @@ function handle(staticRoot, dataRoot, req, res) {
     handleMedia(dataRoot, res, pathname)
       .then(done => { if (!done) send(res, 404, 'Not found'); })
       .catch(err => send(res, 500, JSON.stringify({ error: String(err.message || err) }), { 'Content-Type': 'application/json' }));
+    return;
+  }
+  // hover teaser clips: serve cached preview / build one on request
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    const pm = pathname.match(/^\/preview\/([\w-]+)\.mp4$/);
+    if (pm) {
+      const file = previews.previewPath(dataRoot, pm[1]);
+      fs.stat(file, (err, st) => {
+        if (err || !st.isFile()) return send(res, 404, 'no preview');
+        res.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': 'video/mp4',
+          'Content-Length': st.size });
+        if (req.method === 'HEAD') return res.end();
+        fs.createReadStream(file).pipe(res);
+      });
+      return;
+    }
+  }
+  if (req.method === 'POST' && pathname === '/api/preview/build') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 64 * 1024) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const { id } = JSON.parse(body || '{}');
+        if (!id) throw new Error('no id');
+        const file = await firstLocalFile(dataRoot, id);
+        if (!file) return send(res, 404, JSON.stringify({ ok: false, error: 'no local file' }),
+          { 'Content-Type': 'application/json' });
+        await previews.buildPreview(dataRoot, id, file);
+        send(res, 200, JSON.stringify({ ok: true, ready: true }), { 'Content-Type': 'application/json' });
+      } catch (e) {
+        send(res, 500, JSON.stringify({ ok: false, error: String(e.message || e) }),
+          { 'Content-Type': 'application/json' });
+      }
+    });
     return;
   }
   if (req.method === 'GET' && pathname === '/api/ip') {

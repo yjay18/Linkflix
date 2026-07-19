@@ -4,6 +4,7 @@ import { state } from './state.js';
 import { coverSrc, gradientFor } from './covers.js';
 import { formatDate } from './format.js';
 import { playItem, playEpisode, render } from './views.js';
+import { hasPreview, previewUrl } from './previews.js';
 
 const pop = document.createElement('div');
 pop.id = 'hover-pop';
@@ -41,6 +42,9 @@ function showPop(card) {
     <div class="pop-cover" style="background:${gradientFor(item.title)}">
       ${src ? `<img src="${esc(src)}" alt="" onerror="this.remove()">` : ''}
       <div class="cover-fallback">${esc((item.title || '?')[0].toUpperCase())}</div>
+      ${hasPreview(id) ? `<video class="pop-teaser" src="${previewUrl(id)}"
+        autoplay muted loop playsinline
+        onerror="this.remove()" oncanplay="this.classList.add('on')"></video>` : ''}
     </div>
     <div class="pop-body">
       <div class="pop-title">${esc(item.title)}</div>

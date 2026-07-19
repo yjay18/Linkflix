@@ -465,6 +465,10 @@ main { padding: 118px 40px 90px; max-width: 1320px; margin: 0 auto; outline: non
 #hover-pop .pop-cover .cover-fallback { position: absolute; inset: 0; z-index: 1;
   display: grid; place-items: center; font-size: 3rem; font-weight: 800;
   color: rgba(255, 255, 255, 0.85); }
+/* looping teaser clip — sits above the cover, fades in once it's actually playing */
+#hover-pop .pop-teaser { position: absolute; inset: 0; z-index: 3; width: 100%;
+  height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.45s ease; }
+#hover-pop .pop-teaser.on { opacity: 1; }
 .pop-body { padding: 14px 16px 16px; }
 .pop-title { font-weight: 700; font-size: 1.05rem; }
 .pop-sub { color: var(--text-dim); font-size: 0.82rem; margin-top: 3px;

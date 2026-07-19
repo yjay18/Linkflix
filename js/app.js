@@ -25,6 +25,7 @@ import {
 import { focusFirst } from './nav.js';
 import { startTaggingWorker } from './taxonomy.js';
 import { startSemanticWorker, rankLibrary } from './semantic.js';
+import { startPreviewWorker } from './previews.js';
 import './hover.js';               // side-effect: hover-preview listeners
 
 /* ---------- persistent controls ---------- */
@@ -101,4 +102,5 @@ else saveLibrary();                                // recreate/update library/li
 if (!isAirClient) setTimeout(() => {
   startTaggingWorker();
   startSemanticWorker();
+  startPreviewWorker();
 }, 2000);

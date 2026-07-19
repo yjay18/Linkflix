@@ -26,3 +26,6 @@ build/mpv/
 # regenerable AI assets (scripts/bundle-model.sh)
 models/
 js/vendor/ort-wasm*.wasm
+
+# generated hover teasers (runtime cache)
+previews/
